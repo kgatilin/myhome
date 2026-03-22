@@ -1,0 +1,14 @@
+# Binary
+myhome
+/dist/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Test
+coverage.out
