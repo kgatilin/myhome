@@ -26,6 +26,7 @@ Follow `docs/implementation-plan.md` strictly — implement iteration by iterati
 - `internal/archive/` — move to ~/archive/ + update .gitignore
 - `internal/user/` — agent user lifecycle (OS user, template, vault, sync)
 - `internal/service/` — launchd/systemd unit generation
+- `internal/container/` — Docker container management (build, run, auth profiles, mounts)
 
 ### Code Style
 

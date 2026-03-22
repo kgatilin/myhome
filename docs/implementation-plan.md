@@ -127,7 +127,34 @@ OS-level user management with isolation.
 
 ---
 
-## Iteration 6: Polish
+## Iteration 6: Containers
+
+Docker container management — build, run, auth profiles.
+
+### Tasks
+
+- [ ] `internal/container/container.go` — Parse container definitions from myhome.yml. Build images (shell out to `docker build`). Generate `docker run` commands from config (mounts, env vars, firewall caps, startup commands).
+- [ ] `internal/container/auth.go` — Resolve Claude auth profiles. Map auth profile to auth file + env vars. Mount correct auth file into container.
+- [ ] `internal/container/mounts.go` — Resolve mount paths from config. Handle `:ro` suffix. Auto-mount project dir as `/workspace`. Auto-mount MCP servers if configured.
+- [ ] `internal/container/backup.go` — Git backup before container run (rsync .git to ~/.git-backups/).
+- [ ] Add `container` command group: `build`, `run`, `list`, `shell`
+- [ ] Migrate existing Dockerfiles from `~/.claude-docker/` to `~/containers/claude-code/`
+- [ ] Tests
+
+### Acceptance Criteria
+
+- `myhome container build claude-code` builds image from `containers/claude-code/official/`
+- `myhome container run claude-code --auth work` runs with correct auth file + env vars
+- `myhome container run claude-code --auth vertex-work` sets Vertex env vars
+- `myhome container run cursor` runs cursor container without auth profiles
+- `myhome container list` shows defined containers with build status
+- `myhome container shell claude-code` opens shell for debugging
+- Adding a new container = folder in `~/containers/` + YAML block in `myhome.yml`
+- Single `~/.claude/` config dir shared across all auth profiles
+
+---
+
+## Iteration 7: Polish
 
 - [ ] Zsh completions (`myhome completion zsh`)
 - [ ] Repo name tab-completion (dynamic from myhome.yml)

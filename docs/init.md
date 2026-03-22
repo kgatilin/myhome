@@ -99,6 +99,51 @@ users:
   researcher:
     env: personal
     template: claude-agent
+
+containers:
+  claude-code:
+    dockerfile: containers/claude-code/official
+    image: claude-code-local:official
+    firewall: true
+    git_backup: true
+    startup_commands:
+      - "if [ -f dependencies_python.txt ]; then pip install --user -q -r dependencies_python.txt; fi"
+      - "if [ -f dependencies_go.txt ]; then while IFS= read -r tool; do go install \"$tool\"; done < dependencies_go.txt; fi"
+    mounts:
+      - ~/.ssh:ro
+      - ~/.gitconfig:ro
+      - ~/go/bin:ro
+  cursor:
+    dockerfile: containers/cursor
+    image: cursor-local:latest
+    firewall: false
+    mounts:
+      - ~/.cursor
+      - ~/.config/cursor
+  my-agent:
+    dockerfile: containers/my-agent
+    image: my-agent-local:latest
+    firewall: true
+    mounts:
+      - ~/.ssh:ro
+
+claude:
+  config_dir: ~/.claude
+  auth_profiles:
+    personal:
+      auth_file: ~/.claude.json
+    work:
+      auth_file: ~/.claude-work.json
+    vertex-work:
+      auth_file: ~/.claude-vertex.json
+      env:
+        CLAUDE_CODE_USE_VERTEX: "1"
+        ANTHROPIC_VERTEX_PROJECT_ID: iow-bidcore-dev
+    vertex-personal:
+      auth_file: ~/.claude-vertex-personal.json
+      env:
+        CLAUDE_CODE_USE_VERTEX: "1"
+        ANTHROPIC_VERTEX_PROJECT_ID: iow-bidcore-dev
 ```
 
 ### Commands
@@ -190,6 +235,24 @@ Agent user creation flow:
 6. Init git in agent home, push to dedicated repo
 7. Generate SSH keypair, store in agent's vault
 8. Generate service (launchd plist / systemd unit), enable + start
+
+#### Containers
+
+```
+myhome container build <name>            # Build image from containers/<name>/
+myhome container build --all             # Build all container images
+myhome container run <name> [--auth <p>] # Run container, optionally with Claude auth profile
+myhome container list                    # Show defined containers + build/run status
+myhome container shell <name>            # Open shell in container (debugging)
+```
+
+- Container definitions live in `~/containers/<name>/` (Dockerfile + supporting files)
+- Adding a new container = folder in `~/containers/` + YAML block in `myhome.yml`
+- Claude auth profiles allow single config dir (`~/.claude/`) with different auth methods
+- `--auth` flag selects which auth file + env vars to mount
+- Git backup (rsync `.git` to `~/.git-backups/`) runs automatically if `git_backup: true`
+- Firewall containers get `--cap-add=NET_ADMIN,NET_RAW` automatically
+- Startup commands run before the main process
 
 ### .gitignore Generation
 
