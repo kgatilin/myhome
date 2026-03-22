@@ -25,4 +25,5 @@ func init() {
 	rootCmd.AddCommand(archiveCmd)
 	rootCmd.AddCommand(userCmd)
 	rootCmd.AddCommand(containerCmd)
+	rootCmd.AddCommand(taskCmd)
 }

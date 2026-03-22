@@ -154,7 +154,33 @@ Docker container management — build, run, auth profiles.
 
 ---
 
-## Iteration 7: Polish
+## Iteration 7: Task Management
+
+Lightweight, git-tracked task system for both general tasks and dev run tasks (worktree + container orchestration).
+
+### Tasks
+
+- [ ] `internal/task/task.go` — Task model (id, type, domain, description, status, timestamps). YAML serialization. ID auto-increment.
+- [ ] `internal/task/store.go` — File-based store in `~/tasks/`. Active tasks in `active/`, done in `done/`. Read/write YAML files.
+- [ ] `internal/task/run.go` — Orchestrate run tasks: create worktree (via worktree module) → launch container (via container module) → capture container ID → stream logs to `logs/<id>.log`. Background execution.
+- [ ] `internal/task/log.go` — Tail/stream log file for a run task.
+- [ ] Add `task` command group: `add`, `run`, `list`, `log`, `done`, `stop`, `rm`
+- [ ] Tests
+
+### Acceptance Criteria
+
+- `myhome task add "Review roadmap" --domain work` creates a YAML file in `tasks/active/`
+- `myhome task run uagent TICKET-1234 "Fix crash" --auth work` creates worktree + launches container + creates task
+- `myhome task list` shows both general and run tasks with status
+- `myhome task log 1` streams Claude's output for a run task
+- `myhome task done 1` moves task to `tasks/done/`, optionally removes worktree
+- `myhome task stop 1` kills the container
+- Tasks are git-tracked (just YAML files in `~/tasks/`)
+- Logs are gitignored (can be large)
+
+---
+
+## Iteration 8: Polish
 
 - [ ] Zsh completions (`myhome completion zsh`)
 - [ ] Repo name tab-completion (dynamic from myhome.yml)

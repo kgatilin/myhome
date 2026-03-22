@@ -27,6 +27,7 @@ Follow `docs/implementation-plan.md` strictly — implement iteration by iterati
 - `internal/user/` — agent user lifecycle (OS user, template, vault, sync)
 - `internal/service/` — launchd/systemd unit generation
 - `internal/container/` — Docker container management (build, run, auth profiles, mounts)
+- `internal/task/` — Task management (general tasks + dev run tasks with worktree/container orchestration)
 
 ### Code Style
 
