@@ -12,8 +12,11 @@ One config file (`myhome.yml`) declares your repos, tools, packages, containers,
 - **Packages** — System packages via brew (macOS) / apt (Linux)
 - **Containers** — Build and run Docker/Podman/nerdctl containers with declarative config and Claude auth profiles
 - **Tasks** — Lightweight task management + orchestrated dev runs (create worktree → launch Claude in container → track)
+- **Secrets** — KeePassXC vault management: SSH keys in vault, per-agent vaults, SSH agent integration
 - **Auth** — SSH config and git identity generation from config
 - **Agent Users** — OS-level sub-users with isolated homes, own vaults, read-only access to your files
+- **Remote** — SSH + tmux session management for running Claude on VPS
+- **Scheduled Tasks** — Cron-based recurring prompts (e.g. auto-generate daily work blog from session history)
 - **Cleanup** — Detect orphan worktrees, stale branches, large untracked files
 
 ## Install
@@ -73,6 +76,12 @@ myhome task done 1
 myhome auth generate                     # Generate ~/.ssh/config
 myhome auth keys                         # List SSH keys
 
+# Secrets vault
+myhome vault init                        # Create KeePassXC vault + key file
+myhome vault status                      # Check vault status
+myhome vault ssh-add id_personal         # Import SSH key into vault
+myhome vault ssh-agent                   # Enable SSH agent integration
+
 # Cleanup
 myhome cleanup                           # Report only
 myhome cleanup --apply                   # Interactive confirmation
@@ -82,6 +91,15 @@ myhome user create agent --env work --template claude-agent
 myhome user list
 myhome user shell agent
 myhome user sync agent
+
+# Remote sessions (VPS)
+myhome remote run vps-work uagent "Fix the bug" --auth work
+myhome remote list vps-work
+myhome remote attach vps-work uagent-fix-bug
+
+# Scheduled tasks
+myhome task schedule "Update work blog" --cron "0 18 * * 1-5" --container claude-code --auth work --workdir ~/work/blog
+myhome task schedule list
 ```
 
 ## Configuration
@@ -201,6 +219,7 @@ myhome init --env full
 |------|---------|
 | [mise](https://mise.jdx.dev) | Dev runtime management |
 | [Worktrunk](https://worktrunk.dev) | Git worktree management |
+| [KeePassXC](https://keepassxc.org) | Secrets & SSH key management |
 | Docker / Podman / nerdctl | Container runtime |
 
 ## Status
