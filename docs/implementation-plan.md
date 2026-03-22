@@ -82,7 +82,7 @@ Ties everything together.
 
 ### Tasks
 
-- [ ] Implement `myhome init --env <env>` — orchestrate in order:
+- [x] Implement `myhome init --env <env>` — orchestrate in order:
   1. Load/create myhome.yml
   2. Save env to state file
   3. Generate .gitignore
@@ -91,8 +91,8 @@ Ties everything together.
   6. Generate .mise.toml + run mise install
   7. Install system packages
   8. Clone repos for env
-- [ ] Write `setup/bootstrap.sh` — installs mise → Go → myhome, then runs `myhome init`
-- [ ] Tests (integration-level)
+- [x] Write `setup/bootstrap.sh` — installs mise → Go → myhome, then runs `myhome init`
+- [x] Tests (integration-level)
 
 ### Acceptance Criteria
 
@@ -108,13 +108,13 @@ OS-level user management with isolation.
 
 ### Tasks
 
-- [ ] `internal/user/user.go` — Create/remove OS users via platform abstraction. Manage shared group. Set ACLs for env-scoped dirs.
-- [ ] `internal/user/template.go` — Clone template repo into agent home. Create dedicated repo on git host. Init + push.
-- [ ] `internal/user/vault.go` — Generate SSH keypair for agent. Create agent vault.
-- [ ] `internal/service/service.go` — Generate launchd plist (macOS) or systemd unit (Linux) from template config. Enable/start/stop.
-- [ ] `internal/user/sync.go` — Push/pull agent's home repo.
-- [ ] Update user commands to call real implementations
-- [ ] Tests (may need mocking for OS-level operations)
+- [x] `internal/user/user.go` — Create/remove OS users via platform abstraction. Manage shared group. Set ACLs for env-scoped dirs.
+- [x] `internal/user/template.go` — Clone template repo into agent home. Create dedicated repo on git host. Init + push.
+- [x] `internal/user/vault.go` — Generate SSH keypair for agent. Create agent vault.
+- [x] `internal/service/service.go` — Generate launchd plist (macOS) or systemd unit (Linux) from template config. Enable/start/stop.
+- [x] `internal/user/sync.go` — Push/pull agent's home repo.
+- [x] Update user commands to call real implementations
+- [x] Tests (may need mocking for OS-level operations)
 
 ### Acceptance Criteria
 
@@ -127,7 +127,31 @@ OS-level user management with isolation.
 
 ---
 
-## Iteration 6: Containers
+## Iteration 6: Vault Management
+
+KeePassXC vault setup, SSH key storage, agent vault creation.
+
+### Tasks
+
+- [ ] `internal/vault/vault.go` — Create KeePassXC vault (shell out to `keepassxc-cli`). Generate key file in `~/.secrets/`. Check vault status (exists, locked).
+- [ ] `internal/vault/ssh.go` — Import SSH keys into vault via `keepassxc-cli`. Configure KeePassXC SSH agent integration.
+- [ ] `internal/vault/agent.go` — Create per-agent vault during `user create`. Store agent's SSH keypair in agent vault. Store agent key file in parent's `~/.secrets/`.
+- [ ] Add `vault` command group: `init`, `status`, `ssh-add`, `ssh-agent`
+- [ ] Integration with `myhome user create` — auto-create agent vault
+- [ ] Integration with `myhome init` — prompt to set up vault if not exists
+- [ ] Tests
+
+### Acceptance Criteria
+
+- `myhome vault init` creates `~/setup/vault.kdbx` + `~/.secrets/vault.key`
+- `myhome vault status` shows vault location and whether KeePassXC is running
+- `myhome vault ssh-add id_personal` imports key into vault
+- `myhome user create agent` creates `/home/agent/vault.kdbx` with agent's SSH key
+- Agent vault key files stored in `~/.secrets/<agent>-vault.key` (gitignored)
+
+---
+
+## Iteration 7: Containers
 
 Docker container management — build, run, auth profiles.
 
@@ -154,7 +178,7 @@ Docker container management — build, run, auth profiles.
 
 ---
 
-## Iteration 7: Task Management
+## Iteration 8: Task Management
 
 Lightweight, git-tracked task system for both general tasks and dev run tasks (worktree + container orchestration).
 
@@ -180,7 +204,7 @@ Lightweight, git-tracked task system for both general tasks and dev run tasks (w
 
 ---
 
-## Iteration 8: Remote Sessions
+## Iteration 9: Remote Sessions
 
 SSH + tmux remote session management for running Claude on VPS.
 
@@ -225,7 +249,7 @@ remotes:
 
 ---
 
-## Iteration 9: Scheduled Tasks & Auto-Blog
+## Iteration 10: Scheduled Tasks & Auto-Blog
 
 Cron-based recurring tasks with template variables. Primary use case: auto-generated blog from Claude session history.
 
@@ -249,7 +273,7 @@ Cron-based recurring tasks with template variables. Primary use case: auto-gener
 
 ---
 
-## Iteration 10: Polish
+## Iteration 11: Polish
 
 - [ ] Zsh completions (`myhome completion zsh`)
 - [ ] Repo name tab-completion (dynamic from myhome.yml)

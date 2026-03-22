@@ -28,6 +28,9 @@ Follow `docs/implementation-plan.md` strictly — implement iteration by iterati
 - `internal/service/` — launchd/systemd unit generation
 - `internal/container/` — Docker container management (build, run, auth profiles, mounts)
 - `internal/task/` — Task management (general tasks + dev run tasks with worktree/container orchestration)
+- `internal/vault/` — KeePassXC vault management (create vault, import SSH keys, per-agent vaults)
+- `internal/remote/` — Remote SSH + tmux session management
+- `internal/schedule/` — Cron-based recurring tasks with template variables
 
 ### Code Style
 
