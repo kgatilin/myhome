@@ -255,12 +255,12 @@ Cron-based recurring tasks with template variables. Primary use case: auto-gener
 
 ### Tasks
 
-- [ ] `internal/schedule/schedule.go` — Parse schedule definitions from myhome.yml. Resolve template variables ({date}, {year}, {week}). Generate launchd plists (macOS) or cron entries (Linux).
-- [ ] Add `schedules:` section to config parser
-- [ ] Add `task schedule` subcommands: schedule with prompt/cron/container/auth/workdir, list, rm
-- [ ] Template variable resolution: `{date}` → `2026-03-22`, `{year}` → `2026`, `{week}` → `12`, `{domain}` → work/personal
-- [ ] Integration: scheduled task triggers `myhome task run` with resolved prompt
-- [ ] Tests
+- [x] `internal/schedule/schedule.go` — Parse schedule definitions from myhome.yml. Resolve template variables ({date}, {year}, {week}). Generate launchd plists (macOS) or cron entries (Linux).
+- [x] Add `schedules:` section to config parser
+- [x] Add `task schedule` subcommands: schedule with prompt/cron/container/auth/workdir, list, rm
+- [x] Template variable resolution: `{date}` → `2026-03-22`, `{year}` → `2026`, `{week}` → `12`, `{domain}` → work/personal
+- [x] Integration: scheduled task triggers `myhome task run` with resolved prompt
+- [x] Tests
 
 ### Acceptance Criteria
 
