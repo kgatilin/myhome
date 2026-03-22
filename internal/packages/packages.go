@@ -31,7 +31,7 @@ func List(expected config.PackageSet, plat platform.Platform) ([]PackageStatus, 
 	}
 
 	var packages []string
-	if runtime.GOOS == "darwin" {
+	if plat.PackageManager() == "brew" {
 		packages = expected.Brew
 	} else {
 		packages = expected.Apt
@@ -61,7 +61,7 @@ func Sync(expected config.PackageSet, plat platform.Platform) error {
 	}
 
 	var packages []string
-	if runtime.GOOS == "darwin" {
+	if plat.PackageManager() == "brew" {
 		packages = expected.Brew
 	} else {
 		packages = expected.Apt
@@ -82,7 +82,7 @@ func Sync(expected config.PackageSet, plat platform.Platform) error {
 	}
 
 	// Install cask packages on macOS
-	if runtime.GOOS == "darwin" && len(expected.BrewCask) > 0 {
+	if plat.PackageManager() == "brew" && len(expected.BrewCask) > 0 {
 		if err := plat.InstallCaskPackages(expected.BrewCask); err != nil {
 			return err
 		}

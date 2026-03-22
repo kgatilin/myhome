@@ -104,11 +104,11 @@ func TestScanStaleBranches(t *testing.T) {
 
 	// Create repo with a merged branch
 	cmds := [][]string{
-		{"git", "init", repoPath},
+		{"git", "init", "-b", "main", repoPath},
 		{"git", "-C", repoPath, "commit", "--allow-empty", "-m", "init"},
 		{"git", "-C", repoPath, "checkout", "-b", "feature-done"},
 		{"git", "-C", repoPath, "commit", "--allow-empty", "-m", "feature"},
-		{"git", "-C", repoPath, "checkout", "master"},
+		{"git", "-C", repoPath, "checkout", "main"},
 		{"git", "-C", repoPath, "merge", "feature-done"},
 	}
 	for _, c := range cmds {
