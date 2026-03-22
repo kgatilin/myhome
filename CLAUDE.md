@@ -53,6 +53,7 @@ State file: `~/.myhome-state.yml` (gitignored, tracks current env and runtime st
 - **mise** for dev runtimes — myhome generates .mise.toml, delegates install to mise
 - **Worktrunk** for worktrees — myhome resolves repo names, delegates wt commands
 - **myhome.yml is the source of truth** — .gitignore, .ssh/config, .mise.toml are generated artifacts
+- **Container runtime agnostic** — auto-detects nerdctl/podman/docker, all use same OCI image format
 - **Cleanup is report-only by default** — `--apply` flag for interactive confirmation
 - **Agent users are OS-level** — real users with own homes, not containers
 
