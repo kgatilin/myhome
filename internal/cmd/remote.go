@@ -16,9 +16,10 @@ var remoteCmd = &cobra.Command{
 }
 
 var remoteRunCmd = &cobra.Command{
-	Use:   "run <host> <repo> <prompt>",
-	Short: "Run Claude on remote host in a tmux session",
-	Args:  cobra.ExactArgs(3),
+	Use:               "run <host> <repo> <prompt>",
+	Short:             "Run Claude on remote host in a tmux session",
+	Args:              cobra.ExactArgs(3),
+	ValidArgsFunction: remoteNameCompletionFunc,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hostName := args[0]
 		repo := args[1]
@@ -41,9 +42,10 @@ var remoteRunCmd = &cobra.Command{
 }
 
 var remoteListCmd = &cobra.Command{
-	Use:   "list <host>",
-	Short: "List tmux sessions on remote host",
-	Args:  cobra.ExactArgs(1),
+	Use:               "list <host>",
+	Short:             "List tmux sessions on remote host",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: remoteNameCompletionFunc,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hostName := args[0]
 

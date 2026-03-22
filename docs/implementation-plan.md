@@ -275,9 +275,9 @@ Cron-based recurring tasks with template variables. Primary use case: auto-gener
 
 ## Iteration 11: Polish
 
-- [ ] Zsh completions (`myhome completion zsh`)
-- [ ] Repo name tab-completion (dynamic from myhome.yml)
-- [ ] `myhome packages dump` — snapshot current brew/apt packages into myhome.yml
-- [ ] Error messages and help text refinement
-- [ ] Edge cases: name conflicts (same repo basename in different envs), missing dependencies (mise/wt not installed)
-- [ ] Integration tests with a sample myhome.yml
+- [x] Zsh completions (`myhome completion zsh`)
+- [x] Repo name tab-completion (dynamic from myhome.yml)
+- [x] `myhome packages dump` — snapshot current brew/apt packages into myhome.yml
+- [x] Error messages and help text refinement
+- [x] Edge cases: name conflicts (same repo basename in different envs), missing dependencies (mise/wt not installed)
+- [x] Integration tests with a sample myhome.yml

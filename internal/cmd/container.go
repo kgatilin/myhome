@@ -16,9 +16,10 @@ var containerCmd = &cobra.Command{
 }
 
 var containerBuildCmd = &cobra.Command{
-	Use:   "build <name>",
-	Short: "Build container image",
-	Args:  cobra.MaximumNArgs(1),
+	Use:               "build <name>",
+	Short:             "Build container image",
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: containerNameCompletionFunc,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, homeDir, runtime, err := loadContainerDeps()
 		if err != nil {

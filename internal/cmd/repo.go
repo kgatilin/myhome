@@ -25,7 +25,8 @@ var repoCmd = &cobra.Command{
 		}
 		return handleDynamicRepoCommand(args)
 	},
-	SilenceUsage: true,
+	ValidArgsFunction: repoNameCompletionFunc,
+	SilenceUsage:      true,
 }
 
 var repoListCmd = &cobra.Command{
