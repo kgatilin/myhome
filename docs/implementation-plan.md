@@ -9,12 +9,12 @@ Config parsing and platform abstraction — everything else depends on these.
 - [x] `internal/config/config.go` — Define Go types for `myhome.yml` (envs, repos, tools, packages, auth, users, agent_templates, services, containers, claude, tasks)
 - [x] `internal/config/loader.go` — Load and parse `myhome.yml`, resolve env includes, locate config file (look in `~/setup/myhome.yml`)
 - [x] `internal/config/state.go` — State file (`~/.myhome-state.yml`): current env, last sync timestamps, registered users
-- [ ] `internal/platform/platform.go` — Interface for OS-specific operations (user creation, groups, ACLs, service management, package manager, home dir path)
-- [ ] `internal/platform/darwin.go` — macOS implementation (sysadminctl, dseditgroup, chmod +a, launchd, brew)
-- [ ] `internal/platform/linux.go` — Linux implementation (useradd, groupadd, setfacl, systemd, apt)
-- [ ] `internal/platform/detect.go` — Auto-detect platform at runtime
+- [x] `internal/platform/platform.go` — Interface for OS-specific operations (user creation, groups, ACLs, service management, package manager, home dir path)
+- [x] `internal/platform/darwin.go` — macOS implementation (sysadminctl, dseditgroup, chmod +a, launchd, brew)
+- [x] `internal/platform/linux.go` — Linux implementation (useradd, groupadd, setfacl, systemd, apt)
+- [x] `internal/platform/detect.go` — Auto-detect platform at runtime
 - [x] Tests for config parsing with sample myhome.yml
-- [ ] Tests for platform detection
+- [x] Tests for platform detection
 
 ### Acceptance Criteria
 
@@ -31,14 +31,14 @@ These modules have no dependencies on each other, only on config + platform.
 
 ### Tasks
 
-- [ ] `internal/repo/repo.go` — List repos (with clone/dirty status), sync (clone missing), add (detect URL, update myhome.yml), rm (update myhome.yml)
-- [ ] `internal/gitignore/gitignore.go` — Generate `~/.gitignore` from static rules + dynamic repo paths from config. Write with header comment.
-- [ ] `internal/auth/auth.go` — Generate `~/.ssh/config` from auth section. List keys and their host mappings.
-- [ ] `internal/identity/identity.go` — Generate `.gitconfig` includes based on directory-to-identity mapping (personal default, work override for `~/work/`)
-- [ ] `internal/tools/tools.go` — Generate `~/.mise.toml` from merged tool specs per env. Shell out to `mise install`. List installed vs expected.
-- [ ] `internal/packages/packages.go` — Install packages via brew/apt per env. List installed vs expected. Dump current packages.
-- [ ] Update command files to call real implementations instead of stubs
-- [ ] Tests for each module
+- [x] `internal/repo/repo.go` — List repos (with clone/dirty status), sync (clone missing), add (detect URL, update myhome.yml), rm (update myhome.yml)
+- [x] `internal/gitignore/gitignore.go` — Generate `~/.gitignore` from static rules + dynamic repo paths from config. Write with header comment.
+- [x] `internal/auth/auth.go` — Generate `~/.ssh/config` from auth section. List keys and their host mappings.
+- [x] `internal/identity/identity.go` — Generate `.gitconfig` includes based on directory-to-identity mapping (personal default, work override for `~/work/`)
+- [x] `internal/tools/tools.go` — Generate `~/.mise.toml` from merged tool specs per env. Shell out to `mise install`. List installed vs expected.
+- [x] `internal/packages/packages.go` — Install packages via brew/apt per env. List installed vs expected. Dump current packages.
+- [x] Update command files to call real implementations instead of stubs
+- [x] Tests for each module
 
 ### Acceptance Criteria
 
@@ -58,12 +58,12 @@ These depend on repo module from iteration 2.
 
 ### Tasks
 
-- [ ] `internal/worktree/worktree.go` — Resolve repo name to path from config. Delegate `wt` commands to Worktrunk inside repo dir. Cross-repo `wt list` (iterate all repos, collect worktree info).
-- [ ] `internal/cleanup/cleanup.go` — Scan for: orphan worktrees, stale branches, large untracked files (>10MB), empty dirs. Report mode (default) vs interactive apply mode.
-- [ ] `internal/archive/archive.go` — Move path to `~/archive/`, update .gitignore.
-- [ ] Update `status` command — show current env, dirty repos count, active worktrees count, disk usage summary
-- [ ] Handle `myhome repo <name> wt` dynamic subcommand routing (resolve repo name, delegate to worktree module)
-- [ ] Tests
+- [x] `internal/worktree/worktree.go` — Resolve repo name to path from config. Delegate `wt` commands to Worktrunk inside repo dir. Cross-repo `wt list` (iterate all repos, collect worktree info).
+- [x] `internal/cleanup/cleanup.go` — Scan for: orphan worktrees, stale branches, large untracked files (>10MB), empty dirs. Report mode (default) vs interactive apply mode.
+- [x] `internal/archive/archive.go` — Move path to `~/archive/`, update .gitignore.
+- [x] Update `status` command — show current env, dirty repos count, active worktrees count, disk usage summary
+- [x] Handle `myhome repo <name> wt` dynamic subcommand routing (resolve repo name, delegate to worktree module)
+- [x] Tests
 
 ### Acceptance Criteria
 
@@ -180,7 +180,76 @@ Lightweight, git-tracked task system for both general tasks and dev run tasks (w
 
 ---
 
-## Iteration 8: Polish
+## Iteration 8: Remote Sessions
+
+SSH + tmux remote session management for running Claude on VPS.
+
+### Tasks
+
+- [ ] `internal/remote/remote.go` — SSH into host, manage tmux sessions. Run commands inside tmux. List/attach/stop sessions.
+- [ ] Add `remotes:` section to config parser (host, home path, env)
+- [ ] Add `remote` command group: `run`, `list`, `attach`, `stop`
+- [ ] Integrate with task system — `myhome task run` gains `--remote <host>` flag
+- [ ] Tests (mock SSH/tmux commands)
+
+### Commands
+
+```
+myhome remote run <host> <repo> <prompt> [--auth]   # SSH → tmux → cd repo → claude -p
+myhome remote list <host>                            # List tmux sessions on host
+myhome remote attach <host> <session>                # SSH -t → tmux attach
+myhome remote stop <host> <session>                  # SSH → tmux kill-session
+```
+
+### Configuration
+
+```yaml
+remotes:
+  vps-work:
+    host: user@work-vps.example.com
+    home: ~/
+    env: work
+  vps-personal:
+    host: user@personal-vps.example.com
+    home: ~/
+    env: personal
+```
+
+### Acceptance Criteria
+
+- `myhome remote run vps-work uagent "Fix bug"` SSHs in, creates tmux session, launches Claude
+- `myhome remote list vps-work` shows active tmux sessions
+- `myhome remote attach vps-work uagent-fix-bug` attaches to the session
+- `myhome task run uagent TICKET-1234 "Fix crash" --remote vps-work` creates task + runs remotely
+- Sessions persist after SSH disconnect (tmux)
+
+---
+
+## Iteration 9: Scheduled Tasks & Auto-Blog
+
+Cron-based recurring tasks with template variables. Primary use case: auto-generated blog from Claude session history.
+
+### Tasks
+
+- [ ] `internal/schedule/schedule.go` — Parse schedule definitions from myhome.yml. Resolve template variables ({date}, {year}, {week}). Generate launchd plists (macOS) or cron entries (Linux).
+- [ ] Add `schedules:` section to config parser
+- [ ] Add `task schedule` subcommands: schedule with prompt/cron/container/auth/workdir, list, rm
+- [ ] Template variable resolution: `{date}` → `2026-03-22`, `{year}` → `2026`, `{week}` → `12`, `{domain}` → work/personal
+- [ ] Integration: scheduled task triggers `myhome task run` with resolved prompt
+- [ ] Tests
+
+### Acceptance Criteria
+
+- `myhome task schedule "Update blog" --cron "0 18 * * 1-5" --container claude-code --workdir ~/work/blog` creates launchd plist / cron entry
+- `myhome task schedule list` shows scheduled tasks with next run time
+- `myhome task schedule rm <id>` removes the schedule
+- Template variables resolve correctly at execution time
+- Auto-blog: daily digest appears in `work/blog/{date}.md` after scheduled run
+- Scheduled tasks show up in `myhome task list` when running
+
+---
+
+## Iteration 10: Polish
 
 - [ ] Zsh completions (`myhome completion zsh`)
 - [ ] Repo name tab-completion (dynamic from myhome.yml)
