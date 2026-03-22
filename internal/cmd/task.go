@@ -12,6 +12,7 @@ import (
 
 	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/container"
+	"github.com/kgatilin/myhome/internal/remote"
 	"github.com/kgatilin/myhome/internal/task"
 )
 
@@ -65,6 +66,44 @@ var taskRunCmd = &cobra.Command{
 			return fmt.Errorf("load config: %w", err)
 		}
 
+		remoteName, _ := cmd.Flags().GetString("remote")
+		authProfile, _ := cmd.Flags().GetString("auth")
+
+		// Remote execution path: SSH + tmux instead of local container.
+		if remoteName != "" {
+			remoteCfg, ok := cfg.Remotes[remoteName]
+			if !ok {
+				return fmt.Errorf("unknown remote %q", remoteName)
+			}
+			store, err := defaultTaskStore()
+			if err != nil {
+				return err
+			}
+			id, err := store.NextID()
+			if err != nil {
+				return err
+			}
+			session, err := remote.Run(remoteCfg, args[0], args[2], authProfile, nil)
+			if err != nil {
+				return err
+			}
+			t := &task.Task{
+				ID:          id,
+				Type:        task.TaskTypeRun,
+				Description: args[2],
+				Status:      task.TaskStatusRunning,
+				CreatedAt:   time.Now(),
+				Repo:        args[0],
+				Branch:      args[1],
+			}
+			if err := store.Save(t); err != nil {
+				return err
+			}
+			fmt.Printf("Task %d started remotely on %s (session: %s)\n", id, remoteName, session)
+			fmt.Printf("Attach with: myhome remote attach %s %s\n", remoteName, session)
+			return nil
+		}
+
 		store, err := defaultTaskStore()
 		if err != nil {
 			return err
@@ -92,7 +131,6 @@ var taskRunCmd = &cobra.Command{
 		}
 
 		containerName, _ := cmd.Flags().GetString("container")
-		authProfile, _ := cmd.Flags().GetString("auth")
 
 		runner := task.NewRunner(store, exec.Command, runtime)
 		t, err := runner.Run(task.RunOpts{
@@ -246,6 +284,7 @@ func init() {
 	taskAddCmd.Flags().String("domain", "", "Domain tag (work, dev, life)")
 	taskRunCmd.Flags().String("auth", "", "Claude auth profile")
 	taskRunCmd.Flags().String("container", "claude-code", "Container to use")
+	taskRunCmd.Flags().String("remote", "", "Run on remote host instead of locally")
 	taskListCmd.Flags().String("domain", "", "Filter by domain")
 	taskListCmd.Flags().String("status", "", "Filter by status (open, running, done)")
 	taskLogCmd.Flags().BoolP("follow", "f", false, "Follow log output")

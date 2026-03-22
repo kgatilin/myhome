@@ -13,6 +13,8 @@ type Config struct {
 	Containers       map[string]Container      `yaml:"containers"`
 	Claude           ClaudeConfig              `yaml:"claude"`
 	Tasks            TasksConfig               `yaml:"tasks"`
+	Remotes          map[string]Remote         `yaml:"remotes,omitempty"`
+	Schedules        []Schedule                `yaml:"schedules,omitempty"`
 }
 
 // Env defines an environment profile with included environment tags.
@@ -89,6 +91,24 @@ type AuthProfile struct {
 // TasksConfig holds task-related settings.
 type TasksConfig struct {
 	Dir string `yaml:"dir,omitempty"` // defaults to ~/tasks
+}
+
+// Remote defines a remote host for SSH + tmux session management.
+type Remote struct {
+	Host string `yaml:"host"` // user@host
+	Home string `yaml:"home"` // remote home path
+	Env  string `yaml:"env"`  // environment tag
+}
+
+// Schedule defines a recurring task schedule.
+type Schedule struct {
+	ID        string `yaml:"id"`
+	Prompt    string `yaml:"prompt"`
+	Cron      string `yaml:"cron"`
+	Container string `yaml:"container,omitempty"`
+	Auth      string `yaml:"auth,omitempty"`
+	Workdir   string `yaml:"workdir,omitempty"`
+	Domain    string `yaml:"domain,omitempty"`
 }
 
 // ResolvedEnv holds the merged repos/tools/packages for a resolved environment.

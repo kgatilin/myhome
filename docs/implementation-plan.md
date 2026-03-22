@@ -210,11 +210,11 @@ SSH + tmux remote session management for running Claude on VPS.
 
 ### Tasks
 
-- [ ] `internal/remote/remote.go` — SSH into host, manage tmux sessions. Run commands inside tmux. List/attach/stop sessions.
-- [ ] Add `remotes:` section to config parser (host, home path, env)
-- [ ] Add `remote` command group: `run`, `list`, `attach`, `stop`
-- [ ] Integrate with task system — `myhome task run` gains `--remote <host>` flag
-- [ ] Tests (mock SSH/tmux commands)
+- [x] `internal/remote/remote.go` — SSH into host, manage tmux sessions. Run commands inside tmux. List/attach/stop sessions.
+- [x] Add `remotes:` section to config parser (host, home path, env)
+- [x] Add `remote` command group: `run`, `list`, `attach`, `stop`
+- [x] Integrate with task system — `myhome task run` gains `--remote <host>` flag
+- [x] Tests (mock SSH/tmux commands)
 
 ### Commands
 
