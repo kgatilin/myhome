@@ -133,13 +133,13 @@ KeePassXC vault setup, SSH key storage, agent vault creation.
 
 ### Tasks
 
-- [ ] `internal/vault/vault.go` — Create KeePassXC vault (shell out to `keepassxc-cli`). Generate key file in `~/.secrets/`. Check vault status (exists, locked).
-- [ ] `internal/vault/ssh.go` — Import SSH keys into vault via `keepassxc-cli`. Configure KeePassXC SSH agent integration.
-- [ ] `internal/vault/agent.go` — Create per-agent vault during `user create`. Store agent's SSH keypair in agent vault. Store agent key file in parent's `~/.secrets/`.
-- [ ] Add `vault` command group: `init`, `status`, `ssh-add`, `ssh-agent`
-- [ ] Integration with `myhome user create` — auto-create agent vault
-- [ ] Integration with `myhome init` — prompt to set up vault if not exists
-- [ ] Tests
+- [x] `internal/vault/vault.go` — Create KeePassXC vault (shell out to `keepassxc-cli`). Generate key file in `~/.secrets/`. Check vault status (exists, locked).
+- [x] `internal/vault/ssh.go` — Import SSH keys into vault via `keepassxc-cli`. Configure KeePassXC SSH agent integration.
+- [x] `internal/vault/agent.go` — Create per-agent vault during `user create`. Store agent's SSH keypair in agent vault. Store agent key file in parent's `~/.secrets/`.
+- [x] Add `vault` command group: `init`, `status`, `ssh-add`, `ssh-agent`
+- [x] Integration with `myhome user create` — auto-create agent vault
+- [x] Integration with `myhome init` — prompt to set up vault if not exists
+- [x] Tests
 
 ### Acceptance Criteria
 

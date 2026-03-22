@@ -26,4 +26,5 @@ func init() {
 	rootCmd.AddCommand(userCmd)
 	rootCmd.AddCommand(containerCmd)
 	rootCmd.AddCommand(taskCmd)
+	rootCmd.AddCommand(vaultCmd)
 }

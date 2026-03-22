@@ -2,12 +2,14 @@ package user
 
 import (
 	"fmt"
+	"os"
 	"os/user"
 	"slices"
 
 	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/platform"
 	"github.com/kgatilin/myhome/internal/service"
+	"github.com/kgatilin/myhome/internal/vault"
 )
 
 const sharedGroup = "myhome-agents"
@@ -96,6 +98,16 @@ func Create(name string, userCfg config.User, cfg *config.Config, plat platform.
 		fmt.Printf("Warning: init agent repo: %v\n", err)
 	}
 
+	// Step 7b: Create agent vault (best-effort).
+	secretsDir := homeDir + "/.secrets"
+	if vaultPassword := os.Getenv("MYHOME_VAULT_PASSWORD"); vaultPassword != "" {
+		if err := createAgentVault(name, agentHome, secretsDir, vaultPassword); err != nil {
+			fmt.Printf("Warning: create agent vault: %v\n", err)
+		}
+	} else {
+		fmt.Println("Note: set MYHOME_VAULT_PASSWORD env var to auto-create agent vault")
+	}
+
 	// Step 8: Install and start service.
 	if userCfg.Template != "" {
 		if tmpl, ok := cfg.AgentTemplates[userCfg.Template]; ok && tmpl.Service.Command != "" {
@@ -172,6 +184,11 @@ func registerUser(name string) error {
 		state.Users = append(state.Users, name)
 	}
 	return state.Save(statePath)
+}
+
+// createAgentVault delegates to the vault package to create a per-agent vault.
+func createAgentVault(agentName, agentHome, secretsDir, password string) error {
+	return vault.CreateAgentVault(agentName, agentHome, secretsDir, password, nil)
 }
 
 // unregisterUser removes a user from the state file.
