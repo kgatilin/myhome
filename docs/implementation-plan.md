@@ -6,14 +6,14 @@ Config parsing and platform abstraction — everything else depends on these.
 
 ### Tasks
 
-- [ ] `internal/config/config.go` — Define Go types for `myhome.yml` (envs, repos, tools, packages, auth, users, agent_templates, services)
-- [ ] `internal/config/loader.go` — Load and parse `myhome.yml`, resolve env includes, locate config file (look in `~/setup/myhome.yml`)
-- [ ] `internal/config/state.go` — State file (`~/.myhome-state.yml`): current env, last sync timestamps, registered users
+- [x] `internal/config/config.go` — Define Go types for `myhome.yml` (envs, repos, tools, packages, auth, users, agent_templates, services, containers, claude, tasks)
+- [x] `internal/config/loader.go` — Load and parse `myhome.yml`, resolve env includes, locate config file (look in `~/setup/myhome.yml`)
+- [x] `internal/config/state.go` — State file (`~/.myhome-state.yml`): current env, last sync timestamps, registered users
 - [ ] `internal/platform/platform.go` — Interface for OS-specific operations (user creation, groups, ACLs, service management, package manager, home dir path)
 - [ ] `internal/platform/darwin.go` — macOS implementation (sysadminctl, dseditgroup, chmod +a, launchd, brew)
 - [ ] `internal/platform/linux.go` — Linux implementation (useradd, groupadd, setfacl, systemd, apt)
 - [ ] `internal/platform/detect.go` — Auto-detect platform at runtime
-- [ ] Tests for config parsing with sample myhome.yml
+- [x] Tests for config parsing with sample myhome.yml
 - [ ] Tests for platform detection
 
 ### Acceptance Criteria
@@ -133,13 +133,13 @@ Docker container management — build, run, auth profiles.
 
 ### Tasks
 
-- [ ] `internal/container/container.go` — Parse container definitions from myhome.yml. Build images (shell out to `docker build`). Generate `docker run` commands from config (mounts, env vars, firewall caps, startup commands).
-- [ ] `internal/container/auth.go` — Resolve Claude auth profiles. Map auth profile to auth file + env vars. Mount correct auth file into container.
-- [ ] `internal/container/mounts.go` — Resolve mount paths from config. Handle `:ro` suffix. Auto-mount project dir as `/workspace`. Auto-mount MCP servers if configured.
-- [ ] `internal/container/backup.go` — Git backup before container run (rsync .git to ~/.git-backups/).
-- [ ] Add `container` command group: `build`, `run`, `list`, `shell`
+- [x] `internal/container/container.go` — Parse container definitions from myhome.yml. Build images (shell out to `docker build`). Generate `docker run` commands from config (mounts, env vars, firewall caps, startup commands).
+- [x] `internal/container/auth.go` — Resolve Claude auth profiles. Map auth profile to auth file + env vars. Mount correct auth file into container.
+- [x] `internal/container/mounts.go` — Resolve mount paths from config. Handle `:ro` suffix. Auto-mount project dir as `/workspace`. Auto-mount MCP servers if configured.
+- [x] `internal/container/backup.go` — Git backup before container run (rsync .git to ~/.git-backups/).
+- [x] Add `container` command group: `build`, `run`, `list`, `shell` (wired to real implementations)
 - [ ] Migrate existing Dockerfiles from `~/.claude-docker/` to `~/containers/claude-code/`
-- [ ] Tests
+- [x] Tests
 
 ### Acceptance Criteria
 
@@ -160,12 +160,12 @@ Lightweight, git-tracked task system for both general tasks and dev run tasks (w
 
 ### Tasks
 
-- [ ] `internal/task/task.go` — Task model (id, type, domain, description, status, timestamps). YAML serialization. ID auto-increment.
-- [ ] `internal/task/store.go` — File-based store in `~/tasks/`. Active tasks in `active/`, done in `done/`. Read/write YAML files.
-- [ ] `internal/task/run.go` — Orchestrate run tasks: create worktree (via worktree module) → launch container (via container module) → capture container ID → stream logs to `logs/<id>.log`. Background execution.
-- [ ] `internal/task/log.go` — Tail/stream log file for a run task.
-- [ ] Add `task` command group: `add`, `run`, `list`, `log`, `done`, `stop`, `rm`
-- [ ] Tests
+- [x] `internal/task/task.go` — Task model (id, type, domain, description, status, timestamps). YAML serialization. ID auto-increment.
+- [x] `internal/task/store.go` — File-based store in `~/tasks/`. Active tasks in `active/`, done in `done/`. Read/write YAML files.
+- [x] `internal/task/run.go` — Orchestrate run tasks: create worktree (via git) → launch container → capture container ID → stream logs to `logs/<id>.log`. Background execution.
+- [x] `internal/task/log.go` — Tail/stream log file for a run task.
+- [x] Add `task` command group: `add`, `run`, `list`, `log`, `done`, `stop`, `rm` (wired to real implementations)
+- [x] Tests
 
 ### Acceptance Criteria
 
