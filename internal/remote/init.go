@@ -25,15 +25,22 @@ func Init(opts InitOpts, execFn ExecFunc) error {
 
 	host := opts.Remote.Host
 
-	// Step 1: ssh-copy-id to push SSH key to VPS
-	if err := runCmd(execFn, "ssh-copy-id", host); err != nil {
-		return fmt.Errorf("ssh-copy-id to %s: %w", host, err)
+	// Step 1: ensure SSH key is on VPS (skip if already accessible)
+	if err := runSSH(execFn, host, "true"); err != nil {
+		// Can't connect — try ssh-copy-id
+		if err := runCmd(execFn, "ssh-copy-id", host); err != nil {
+			return fmt.Errorf("ssh-copy-id to %s: %w", host, err)
+		}
 	}
 
-	// Step 2: SSH in, git clone home repo to ~
-	cloneCmd := fmt.Sprintf("git clone %s ~/ || true", opts.HomeRepo)
-	if err := runSSH(execFn, host, cloneCmd); err != nil {
-		return fmt.Errorf("cloning home repo on %s: %w", host, err)
+	// Step 2: SSH in, set up home repo (handles non-empty home dirs)
+	setupRepoCmd := fmt.Sprintf(
+		"cd ~ && if [ -d .git ]; then git pull origin main || true; "+
+			"else git init && git remote add origin %s && git fetch origin && "+
+			"git checkout -f main; fi",
+		opts.HomeRepo)
+	if err := runSSH(execFn, host, setupRepoCmd); err != nil {
+		return fmt.Errorf("setting up home repo on %s: %w", host, err)
 	}
 
 	// Step 3: scp vault key file to remote ~/.secrets/vault.key

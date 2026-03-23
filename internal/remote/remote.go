@@ -32,10 +32,19 @@ func Run(remote config.Remote, repo, prompt, authProfile string, execFn ExecFunc
 		execFn = DefaultExec
 	}
 
-	sessionName := sanitizeSessionName(repo + "-" + firstWords(prompt, 3))
+	repoLabel := repo
+	if repoLabel == "." || repoLabel == "" {
+		repoLabel = "home"
+	}
+	sessionName := sanitizeSessionName(repoLabel + "-" + firstWords(prompt, 3))
 
 	// Build the remote command: cd to repo dir, then run claude.
-	repoDir := remote.Home + "/" + repo
+	var repoDir string
+	if repo == "." || repo == "" {
+		repoDir = remote.Home
+	} else {
+		repoDir = remote.Home + "/" + repo
+	}
 	remoteCmd := fmt.Sprintf(
 		"tmux new-session -d -s %s -c %s '%s'",
 		sessionName,
@@ -148,12 +157,15 @@ func firstWords(s string, n int) string {
 }
 
 // buildClaudeCommand constructs the claude CLI command for remote execution.
-// command is the base command (e.g. "claude -p"); defaults to "claude -p" if empty.
+// If prompt is provided, it's passed as --prompt for interactive mode.
 func buildClaudeCommand(prompt, authProfile, command string) string {
 	if command == "" {
-		command = "claude -p"
+		command = "claude"
 	}
-	cmd := fmt.Sprintf("%s %q", command, prompt)
+	cmd := command
+	if prompt != "" {
+		cmd = fmt.Sprintf("%s --prompt %q", cmd, prompt)
+	}
 	if authProfile != "" {
 		cmd = fmt.Sprintf("CLAUDE_AUTH_PROFILE=%s %s", authProfile, cmd)
 	}

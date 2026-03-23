@@ -16,14 +16,22 @@ var remoteCmd = &cobra.Command{
 }
 
 var remoteRunCmd = &cobra.Command{
-	Use:               "run <host> <repo> <prompt>",
+	Use:               "run <host> [repo] [prompt]",
 	Short:             "Run Claude on remote host in a tmux session",
-	Args:              cobra.ExactArgs(3),
+	Args:              cobra.RangeArgs(1, 3),
 	ValidArgsFunction: remoteNameCompletionFunc,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hostName := args[0]
-		repo := args[1]
-		prompt := args[2]
+		var repo, prompt string
+		switch len(args) {
+		case 3:
+			repo = args[1]
+			prompt = args[2]
+		case 2:
+			repo = args[1]
+		default:
+			repo = "."
+		}
 		authProfile, _ := cmd.Flags().GetString("auth")
 
 		remoteCfg, err := loadRemote(hostName)
@@ -36,8 +44,14 @@ var remoteRunCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Session started: %s on %s\n", session, hostName)
-		fmt.Printf("Attach with: myhome remote attach %s %s\n", hostName, session)
-		return nil
+
+		detach, _ := cmd.Flags().GetBool("detach")
+		if detach {
+			fmt.Printf("Attach with: myhome remote attach %s %s\n", hostName, session)
+			return nil
+		}
+
+		return remote.Attach(remoteCfg, session, nil)
 	},
 }
 
@@ -165,6 +179,7 @@ var remoteInitCmd = &cobra.Command{
 
 func init() {
 	remoteRunCmd.Flags().String("auth", "", "Claude auth profile")
+	remoteRunCmd.Flags().BoolP("detach", "d", false, "Don't attach after starting session")
 	remoteInitCmd.Flags().String("repo", "", "Home repo git URL")
 	remoteInitCmd.Flags().String("vault-key", "~/.secrets/vault.key", "Local path to vault key file")
 
