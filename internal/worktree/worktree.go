@@ -24,7 +24,8 @@ type WorktreeInfo struct {
 func Create(repo *config.Repo, branch, homeDir string) (string, error) {
 	repoPath := filepath.Join(homeDir, repo.Path)
 	wtDir := worktreeDir(repo, repoPath)
-	wtPath := filepath.Join(wtDir, branch)
+	sanitizedBranch := strings.ReplaceAll(branch, "/", "--")
+	wtPath := filepath.Join(wtDir, sanitizedBranch)
 
 	if err := os.MkdirAll(wtDir, 0o755); err != nil {
 		return "", fmt.Errorf("create worktree dir: %w", err)
@@ -67,7 +68,8 @@ func Remove(repo *config.Repo, branch, homeDir string) error {
 		}
 	} else {
 		wtDir := worktreeDir(repo, repoPath)
-		wtPath := filepath.Join(wtDir, branch)
+		sanitizedBranch := strings.ReplaceAll(branch, "/", "--")
+		wtPath := filepath.Join(wtDir, sanitizedBranch)
 		cmd := exec.Command("git", "worktree", "remove", wtPath)
 		cmd.Dir = repoPath
 		cmd.Stdout = os.Stdout

@@ -47,7 +47,8 @@ type RunOpts struct {
 // skips creation and launches a new container on the existing worktree.
 func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	// Determine worktree path: <projectDir>/.worktrees/<branch>
-	worktreePath := filepath.Join(opts.ProjectDir, ".worktrees", t.Branch)
+	sanitizedBranch := strings.ReplaceAll(t.Branch, "/", "--")
+	worktreePath := filepath.Join(opts.ProjectDir, ".worktrees", sanitizedBranch)
 
 	// Step 1: Create worktree (skip if already exists — supports re-runs)
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
@@ -215,34 +216,37 @@ func (r *Runner) Done(id int, merge bool) error {
 		return r.store.MarkDone(id)
 	}
 
-	var stderr bytes.Buffer
-
-	// Push the branch first
-	cmd := r.execFn("git", "push", "origin", t.Branch)
-	cmd.Dir = t.WorktreePath
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pushing branch: %s: %w", strings.TrimSpace(stderr.String()), err)
-	}
-
-	if merge {
-		// Try Worktrunk merge (squash → rebase → merge → remove)
-		stderr.Reset()
-		wtCmd := r.execFn("wt", "merge")
-		wtCmd.Dir = t.WorktreePath
-		wtCmd.Stderr = &stderr
-		if err := wtCmd.Run(); err != nil {
-			// Fallback: just remove the worktree, let CI handle the merge
-			fmt.Printf("wt merge failed (%v), removing worktree only\n", err)
-		}
-	}
-
-	// Remove worktree if it still exists
+	// Only push and clean up if worktree path still exists on disk
 	if _, err := os.Stat(t.WorktreePath); err == nil {
-		stderr.Reset()
-		cmd = r.execFn("git", "worktree", "remove", t.WorktreePath)
+		var stderr bytes.Buffer
+
+		// Push the branch first
+		cmd := r.execFn("git", "push", "origin", t.Branch)
+		cmd.Dir = t.WorktreePath
 		cmd.Stderr = &stderr
-		_ = cmd.Run() // Best effort
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("pushing branch: %s: %w", strings.TrimSpace(stderr.String()), err)
+		}
+
+		if merge {
+			// Try Worktrunk merge (squash → rebase → merge → remove)
+			stderr.Reset()
+			wtCmd := r.execFn("wt", "merge")
+			wtCmd.Dir = t.WorktreePath
+			wtCmd.Stderr = &stderr
+			if err := wtCmd.Run(); err != nil {
+				// Fallback: just remove the worktree, let CI handle the merge
+				fmt.Printf("wt merge failed (%v), removing worktree only\n", err)
+			}
+		}
+
+		// Remove worktree if it still exists
+		if _, err := os.Stat(t.WorktreePath); err == nil {
+			stderr.Reset()
+			cmd = r.execFn("git", "worktree", "remove", t.WorktreePath)
+			cmd.Stderr = &stderr
+			_ = cmd.Run() // Best effort
+		}
 	}
 
 	return r.store.MarkDone(id)

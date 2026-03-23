@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -188,6 +189,17 @@ var taskRunCmd = &cobra.Command{
 				repoContainer = r.Container
 				break
 			}
+			// Fallback: check if repo matches any path segment (e.g. "uagent" matches "work/uagent/code")
+			for _, seg := range strings.Split(r.Path, "/") {
+				if seg == t.Repo {
+					projectDir = filepath.Join(homeDir, r.Path)
+					repoContainer = r.Container
+					break
+				}
+			}
+			if projectDir != "" {
+				break
+			}
 		}
 		if projectDir == "" {
 			return fmt.Errorf("unknown repo: %s", t.Repo)
@@ -195,10 +207,8 @@ var taskRunCmd = &cobra.Command{
 
 		// Container priority: --container flag > repo config > default
 		containerName, _ := cmd.Flags().GetString("container")
-		if containerName == "" || containerName == "claude-code" {
-			if repoContainer != "" {
-				containerName = repoContainer
-			}
+		if containerName == "" {
+			containerName = repoContainer
 		}
 
 		// Look up container definition from config
