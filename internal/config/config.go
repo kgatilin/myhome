@@ -69,13 +69,15 @@ type User struct {
 
 // Container defines a container image and its run configuration.
 type Container struct {
-	Dockerfile      string   `yaml:"dockerfile"`
-	Image           string   `yaml:"image"`
-	Firewall        bool     `yaml:"firewall"`
-	GitBackup       bool     `yaml:"git_backup"`
-	StartupCommands []string `yaml:"startup_commands,omitempty"`
-	Mounts          []string `yaml:"mounts,omitempty"`
-	Volumes         []string `yaml:"volumes,omitempty"`
+	Dockerfile      string            `yaml:"dockerfile"`
+	Image           string            `yaml:"image"`
+	Firewall        bool              `yaml:"firewall"`
+	GitBackup       bool              `yaml:"git_backup"`
+	StartupCommands []string          `yaml:"startup_commands,omitempty"`
+	Mounts          []string          `yaml:"mounts,omitempty"`
+	Volumes         []string          `yaml:"volumes,omitempty"`
+	Env             map[string]string `yaml:"env,omitempty"`
+	HomeDir         string            `yaml:"home_dir,omitempty"` // container user home, default /home/node
 }
 
 // ClaudeConfig holds Claude-specific settings.
@@ -97,9 +99,10 @@ type TasksConfig struct {
 
 // Remote defines a remote host for SSH + tmux session management.
 type Remote struct {
-	Host string `yaml:"host"` // user@host
-	Home string `yaml:"home"` // remote home path
-	Env  string `yaml:"env"`  // environment tag
+	Host    string `yaml:"host"`              // user@host
+	Home    string `yaml:"home"`              // remote home path
+	Env     string `yaml:"env"`               // environment tag
+	Command string `yaml:"command,omitempty"` // command to run (default: "claude -p")
 }
 
 // Schedule defines a recurring task schedule.

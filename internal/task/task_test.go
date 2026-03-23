@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kgatilin/myhome/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -435,8 +436,11 @@ func TestRunnerRunTask(t *testing.T) {
 	runner := NewRunner(store, execFn, "docker")
 	err := runner.RunTask(tk, RunOpts{
 		ContainerName: "claude-code",
-		AuthProfile:   "work",
-		ProjectDir:    projectDir,
+		ContainerConfig: config.Container{
+			StartupCommands: []string{"exec claude --dangerously-skip-permissions -p {{.Prompt}}"},
+		},
+		AuthProfile: "work",
+		ProjectDir:  projectDir,
 	})
 	if err != nil {
 		t.Fatalf("RunTask: %v", err)
@@ -648,6 +652,54 @@ func TestRunnerStopNoContainerID(t *testing.T) {
 	err := runner.Stop(1)
 	if err == nil {
 		t.Error("expected error for task with no container ID")
+	}
+}
+
+func TestRenderStartupCommand(t *testing.T) {
+	tests := []struct {
+		name   string
+		cmd    string
+		prompt string
+		want   string
+	}{
+		{
+			"simple prompt",
+			"exec claude -p {{.Prompt}}",
+			"fix the bug",
+			"exec claude -p 'fix the bug'",
+		},
+		{
+			"no template var",
+			"git config --global user.name test",
+			"anything",
+			"git config --global user.name test",
+		},
+		{
+			"prompt with single quotes",
+			"exec claude -p {{.Prompt}}",
+			"fix the bug in 'main.go'",
+			"exec claude -p 'fix the bug in '\"'\"'main.go'\"'\"''",
+		},
+		{
+			"prompt with shell metacharacters",
+			"exec claude -p {{.Prompt}}",
+			"run $(whoami) && rm -rf /",
+			"exec claude -p 'run $(whoami) && rm -rf /'",
+		},
+		{
+			"multiple template vars",
+			"echo {{.Prompt}} && exec claude -p {{.Prompt}}",
+			"test",
+			"echo 'test' && exec claude -p 'test'",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RenderStartupCommand(tt.cmd, tt.prompt)
+			if got != tt.want {
+				t.Errorf("RenderStartupCommand(%q, %q) = %q, want %q", tt.cmd, tt.prompt, got, tt.want)
+			}
+		})
 	}
 }
 

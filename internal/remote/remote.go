@@ -40,7 +40,7 @@ func Run(remote config.Remote, repo, prompt, authProfile string, execFn ExecFunc
 		"tmux new-session -d -s %s -c %s '%s'",
 		sessionName,
 		repoDir,
-		buildClaudeCommand(prompt, authProfile),
+		buildClaudeCommand(prompt, authProfile, remote.Command),
 	)
 
 	cmd := execFn("ssh", remote.Host, remoteCmd)
@@ -148,8 +148,12 @@ func firstWords(s string, n int) string {
 }
 
 // buildClaudeCommand constructs the claude CLI command for remote execution.
-func buildClaudeCommand(prompt, authProfile string) string {
-	cmd := fmt.Sprintf("claude -p %q", prompt)
+// command is the base command (e.g. "claude -p"); defaults to "claude -p" if empty.
+func buildClaudeCommand(prompt, authProfile, command string) string {
+	if command == "" {
+		command = "claude -p"
+	}
+	cmd := fmt.Sprintf("%s %q", command, prompt)
 	if authProfile != "" {
 		cmd = fmt.Sprintf("CLAUDE_AUTH_PROFILE=%s %s", authProfile, cmd)
 	}

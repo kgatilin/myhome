@@ -235,17 +235,20 @@ func containsStr(s, substr string) bool {
 
 func TestBuildClaudeCommand(t *testing.T) {
 	tests := []struct {
-		prompt string
-		auth   string
-		want   string
+		prompt  string
+		auth    string
+		command string
+		want    string
 	}{
-		{"Fix bug", "", `claude -p "Fix bug"`},
-		{"Fix bug", "work", `CLAUDE_AUTH_PROFILE=work claude -p "Fix bug"`},
+		{"Fix bug", "", "", `claude -p "Fix bug"`},
+		{"Fix bug", "work", "", `CLAUDE_AUTH_PROFILE=work claude -p "Fix bug"`},
+		{"Fix bug", "", "claude --dangerously-skip-permissions -p", `claude --dangerously-skip-permissions -p "Fix bug"`},
+		{"Fix bug", "work", "claude -p", `CLAUDE_AUTH_PROFILE=work claude -p "Fix bug"`},
 	}
 	for _, tt := range tests {
-		got := buildClaudeCommand(tt.prompt, tt.auth)
+		got := buildClaudeCommand(tt.prompt, tt.auth, tt.command)
 		if got != tt.want {
-			t.Errorf("buildClaudeCommand(%q, %q) = %q, want %q", tt.prompt, tt.auth, got, tt.want)
+			t.Errorf("buildClaudeCommand(%q, %q, %q) = %q, want %q", tt.prompt, tt.auth, tt.command, got, tt.want)
 		}
 	}
 }

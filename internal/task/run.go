@@ -117,6 +117,12 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		}
 	}
 
+	// Resolve container home dir (default /home/node)
+	containerHome := opts.ContainerConfig.HomeDir
+	if containerHome == "" {
+		containerHome = "/home/node"
+	}
+
 	// Mount Claude config dir
 	claudeConfigDir := "~/.claude"
 	if opts.ClaudeConfig != nil && opts.ClaudeConfig.ConfigDir != "" {
@@ -124,8 +130,8 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	}
 	resolvedConfigDir := expandHome(claudeConfigDir, opts.HomeDir)
 	containerArgs = append(containerArgs,
-		"-v", resolvedConfigDir+":/home/node/.claude",
-		"-e", "CLAUDE_CONFIG_DIR=/home/node/.claude",
+		"-v", resolvedConfigDir+":"+containerHome+"/.claude",
+		"-e", "CLAUDE_CONFIG_DIR="+containerHome+"/.claude",
 	)
 
 	// Mount Claude auth file based on profile
@@ -133,7 +139,7 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		if profile, ok := opts.ClaudeConfig.AuthProfiles[opts.AuthProfile]; ok {
 			authFile := expandHome(profile.AuthFile, opts.HomeDir)
 			containerArgs = append(containerArgs,
-				"-v", authFile+":/home/node/.claude.json:ro",
+				"-v", authFile+":"+containerHome+"/.claude.json:ro",
 			)
 			// Add env vars from auth profile (e.g. CLAUDE_CODE_USE_VERTEX)
 			for k, v := range profile.Env {
@@ -152,25 +158,25 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		containerArgs = append(containerArgs, "-v", v)
 	}
 
-	// Node memory limit
-	containerArgs = append(containerArgs, "-e", "NODE_OPTIONS=--max-old-space-size=4096")
-
-	// PATH for tools inside container
-	containerArgs = append(containerArgs,
-		"-e", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/share/npm-global/bin:/usr/local/go/bin:/home/node/go/bin:/go/bin:/home/node/.local/bin",
-	)
+	// Environment variables from container config
+	for k, v := range opts.ContainerConfig.Env {
+		containerArgs = append(containerArgs, "-e", k+"="+v)
+	}
 
 	// Image
 	containerArgs = append(containerArgs, image)
 
-	// Command: build startup script + claude with prompt
+	// Command: render startup commands with template variables
 	prompt := t.Description
-	startupScript := ""
-
-	for _, sc := range opts.ContainerConfig.StartupCommands {
-		startupScript += sc + " ; "
+	if len(opts.ContainerConfig.StartupCommands) == 0 {
+		return fmt.Errorf("container %q has no startup_commands configured", opts.ContainerName)
 	}
-	startupScript += fmt.Sprintf("exec claude --dangerously-skip-permissions -p %q", prompt)
+
+	var parts []string
+	for _, sc := range opts.ContainerConfig.StartupCommands {
+		parts = append(parts, RenderStartupCommand(sc, prompt))
+	}
+	startupScript := strings.Join(parts, " ; ")
 
 	containerArgs = append(containerArgs, "/bin/bash", "-c", startupScript)
 
@@ -302,6 +308,14 @@ func (r *Runner) Stop(id int) error {
 	}
 
 	return nil
+}
+
+// RenderStartupCommand replaces template variables in a startup command.
+// Currently supports {{.Prompt}} which is replaced with the shell-quoted prompt value.
+func RenderStartupCommand(cmd, prompt string) string {
+	// Shell-quote the prompt to prevent injection
+	quoted := "'" + strings.ReplaceAll(prompt, "'", "'\"'\"'") + "'"
+	return strings.ReplaceAll(cmd, "{{.Prompt}}", quoted)
 }
 
 // expandHome replaces ~ with the actual home directory.

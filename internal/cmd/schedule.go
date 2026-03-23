@@ -171,7 +171,7 @@ var taskScheduleRmCmd = &cobra.Command{
 
 func init() {
 	taskScheduleAddCmd.Flags().String("cron", "", "Cron expression (e.g., '0 18 * * 1-5')")
-	taskScheduleAddCmd.Flags().String("container", "claude-code", "Container to use")
+	taskScheduleAddCmd.Flags().String("container", "", "Container to use (default: from repo config)")
 	taskScheduleAddCmd.Flags().String("auth", "", "Claude auth profile")
 	taskScheduleAddCmd.Flags().String("workdir", "", "Working directory")
 	taskScheduleAddCmd.Flags().String("domain", "", "Domain tag")
