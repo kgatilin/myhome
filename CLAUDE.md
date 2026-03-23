@@ -78,6 +78,11 @@ god classes, hub nodes, feature envy, shotgun surgery, cyclic dependencies.
 
 Run `archlint collect . -l go -o architecture.yaml` to generate a full architecture snapshot.
 
+### Container Config Constraints
+
+- Container configs in myhome.yml must include `startup_commands` with a `{{.Prompt}}` template variable. The task runner renders this but does not add its own command. Example: `"exec claude --dangerously-skip-permissions --output-format text -p {{.Prompt}}"`
+- `dependencies_go.txt` supports a `source:` prefix for packages that can't be `go install`ed (e.g. module path mismatches). Format: `source:github.com/user/repo cmd/tool` — triggers git clone + go build instead of go install.
+
 ### Dependencies
 
 - `github.com/spf13/cobra` — CLI framework
