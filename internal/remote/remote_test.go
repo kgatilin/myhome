@@ -2,6 +2,7 @@ package remote
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/kgatilin/myhome/internal/config"
@@ -149,6 +150,87 @@ func TestFirstWords(t *testing.T) {
 			t.Errorf("firstWords(%q, %d) = %q, want %q", tt.input, tt.n, got, tt.want)
 		}
 	}
+}
+
+func TestInit(t *testing.T) {
+	var calls []string
+	execFn := fakeExec(&calls)
+
+	err := Init(InitOpts{
+		Remote:   testRemote(),
+		HomeRepo: "git@github.com:user/home.git",
+		VaultKey: "/home/user/.secrets/vault.key",
+	}, execFn)
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Expect 5 commands: ssh-copy-id, ssh clone, ssh mkdir, scp, ssh bootstrap, ssh myhome init
+	if len(calls) < 5 {
+		t.Fatalf("expected at least 5 calls, got %d: %v", len(calls), calls)
+	}
+
+	// Step 1: ssh-copy-id
+	if !containsStr(calls[0], "ssh-copy-id") {
+		t.Errorf("call 0: expected ssh-copy-id, got %q", calls[0])
+	}
+
+	// Step 2: git clone
+	if !containsStr(calls[1], "git clone") {
+		t.Errorf("call 1: expected git clone, got %q", calls[1])
+	}
+
+	// Step 3: mkdir ~/.secrets
+	if !containsStr(calls[2], "mkdir") {
+		t.Errorf("call 2: expected mkdir, got %q", calls[2])
+	}
+
+	// Step 4: scp vault key
+	if !containsStr(calls[3], "scp") {
+		t.Errorf("call 3: expected scp, got %q", calls[3])
+	}
+
+	// Step 5: bootstrap.sh
+	if !containsStr(calls[4], "bootstrap.sh") {
+		t.Errorf("call 4: expected bootstrap.sh, got %q", calls[4])
+	}
+
+	// Step 6: myhome init
+	if len(calls) > 5 && !containsStr(calls[5], "myhome init") {
+		t.Errorf("call 5: expected myhome init, got %q", calls[5])
+	}
+}
+
+func TestInitNoVaultKey(t *testing.T) {
+	var calls []string
+	execFn := fakeExec(&calls)
+
+	err := Init(InitOpts{
+		Remote:   testRemote(),
+		HomeRepo: "git@github.com:user/home.git",
+	}, execFn)
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Without vault key, should skip mkdir + scp steps (4 calls instead of 6)
+	if len(calls) != 4 {
+		t.Errorf("expected 4 calls without vault key, got %d: %v", len(calls), calls)
+	}
+}
+
+func TestInitSSHCopyIDFailure(t *testing.T) {
+	err := Init(InitOpts{
+		Remote:   testRemote(),
+		HomeRepo: "git@github.com:user/home.git",
+	}, fakeExecFail())
+	if err == nil {
+		t.Error("Init() should fail when ssh-copy-id fails")
+	}
+}
+
+func containsStr(s, substr string) bool {
+	return len(s) >= len(substr) && strings.Contains(s, substr)
 }
 
 func TestBuildClaudeCommand(t *testing.T) {

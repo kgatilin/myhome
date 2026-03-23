@@ -109,9 +109,66 @@ var remoteStopCmd = &cobra.Command{
 	},
 }
 
+var remoteInitCmd = &cobra.Command{
+	Use:               "init <host> --env <env>",
+	Short:             "Bootstrap a remote VPS",
+	Long:              "Push SSH key, clone home repo, copy vault key, run bootstrap.sh, then myhome init.",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: remoteNameCompletionFunc,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		hostName := args[0]
+
+		remoteCfg, err := loadRemote(hostName)
+		if err != nil {
+			return err
+		}
+
+		cfgPath, err := config.DefaultConfigPath()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.Load(cfgPath)
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		homeRepo, _ := cmd.Flags().GetString("repo")
+		if homeRepo == "" {
+			// Try to detect from first repo with no env filter (the home repo)
+			for _, r := range cfg.Repos {
+				if r.URL != "" {
+					homeRepo = r.URL
+					break
+				}
+			}
+		}
+		if homeRepo == "" {
+			return fmt.Errorf("--repo is required (home repo git URL)")
+		}
+
+		vaultKey, _ := cmd.Flags().GetString("vault-key")
+
+		fmt.Printf("Bootstrapping %s (%s) with env %s...\n", hostName, remoteCfg.Host, remoteCfg.Env)
+
+		if err := remote.Init(remote.InitOpts{
+			Remote:   remoteCfg,
+			HomeRepo: homeRepo,
+			VaultKey: vaultKey,
+		}, nil); err != nil {
+			return err
+		}
+
+		fmt.Printf("Remote %s initialized successfully\n", hostName)
+		return nil
+	},
+}
+
 func init() {
 	remoteRunCmd.Flags().String("auth", "", "Claude auth profile")
+	remoteInitCmd.Flags().String("repo", "", "Home repo git URL")
+	remoteInitCmd.Flags().String("vault-key", "~/.secrets/vault.key", "Local path to vault key file")
 
+	remoteCmd.AddCommand(remoteInitCmd)
 	remoteCmd.AddCommand(remoteRunCmd)
 	remoteCmd.AddCommand(remoteListCmd)
 	remoteCmd.AddCommand(remoteAttachCmd)
