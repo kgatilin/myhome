@@ -219,11 +219,21 @@ SSH + tmux remote session management for running Claude on VPS.
 ### Commands
 
 ```
-myhome remote run <host> <repo> <prompt> [--auth]   # SSH → tmux → cd repo → claude -p
+myhome remote init <host> --env <env>                # Full VPS bootstrap from laptop
+myhome remote run <host> <repo> <prompt> [--auth]    # SSH → tmux → cd repo → claude -p
 myhome remote list <host>                            # List tmux sessions on host
 myhome remote attach <host> <session>                # SSH -t → tmux attach
 myhome remote stop <host> <session>                  # SSH → tmux kill-session
 ```
+
+### Remote Init Flow
+
+`myhome remote init user@vps --env work` does:
+1. `ssh-copy-id` — push your SSH key to VPS (GitHub auth works via forwarded key)
+2. SSH in, `git clone git@github.com:user/home.git ~`
+3. `scp ~/.secrets/vault.key` to VPS `~/.secrets/vault.key`
+4. SSH in, run `~/setup/bootstrap.sh` (installs mise → Go → myhome)
+5. SSH in, run `myhome init --env work` (extracts SSH keys from vault, sets up everything)
 
 ### Configuration
 
