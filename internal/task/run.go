@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/kgatilin/myhome/internal/config"
@@ -39,6 +40,7 @@ type RunOpts struct {
 	ClaudeConfig    *config.ClaudeConfig // Claude auth profiles config
 	ProjectDir      string
 	HomeDir         string // user home dir for mount resolution
+	Notify          bool   // send desktop notification on completion
 }
 
 // RunTask creates a worktree (via Worktrunk or git), launches a container with Claude,
@@ -207,7 +209,52 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		return fmt.Errorf("saving task: %w", err)
 	}
 
+	// Spawn background completion watcher
+	notify := opts.Notify
+	go r.watchCompletion(t.ID, containerID, notify)
+
 	return nil
+}
+
+// watchCompletion waits for the container to exit, updates task status, and optionally sends a notification.
+func (r *Runner) watchCompletion(taskID int, containerID string, notify bool) {
+	// docker wait returns the exit code when the container stops
+	cmd := r.execFn(r.runtime, "wait", containerID)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return // container may already be gone
+	}
+
+	exitCodeStr := strings.TrimSpace(stdout.String())
+	exitCode := 0
+	if v, err := strconv.Atoi(exitCodeStr); err == nil {
+		exitCode = v
+	}
+
+	t, err := r.store.Load(taskID)
+	if err != nil {
+		return
+	}
+
+	t.ExitCode = &exitCode
+	if exitCode == 0 {
+		t.Status = TaskStatusDone
+	} else {
+		t.Status = TaskStatusFailed
+	}
+	r.store.Save(t) //nolint:errcheck
+
+	if notify {
+		status := "completed"
+		if exitCode != 0 {
+			status = fmt.Sprintf("failed (exit %d)", exitCode)
+		}
+		SendNotification(
+			fmt.Sprintf("Task %d %s", taskID, status),
+			t.Description,
+		)
+	}
 }
 
 // createWorktree creates a worktree using Worktrunk (wt) if available, falling back to git.
@@ -319,6 +366,23 @@ func RenderStartupCommand(cmd, prompt string) string {
 	// Shell-quote the prompt to prevent injection
 	quoted := "'" + strings.ReplaceAll(prompt, "'", "'\"'\"'") + "'"
 	return strings.ReplaceAll(cmd, "{{.Prompt}}", quoted)
+}
+
+// WaitForContainer blocks until the container exits and returns its exit code.
+func (r *Runner) WaitForContainer(containerID string) (int, error) {
+	cmd := r.execFn(r.runtime, "wait", containerID)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return 1, fmt.Errorf("waiting for container: %s: %w", strings.TrimSpace(stderr.String()), err)
+	}
+	exitCodeStr := strings.TrimSpace(stdout.String())
+	exitCode, err := strconv.Atoi(exitCodeStr)
+	if err != nil {
+		return 1, fmt.Errorf("parsing exit code %q: %w", exitCodeStr, err)
+	}
+	return exitCode, nil
 }
 
 // expandHome replaces ~ with the actual home directory.

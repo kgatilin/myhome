@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -217,6 +218,12 @@ var taskRunCmd = &cobra.Command{
 			return fmt.Errorf("unknown container %q in myhome.yml", containerName)
 		}
 
+		// Determine if notifications are enabled (default true on macOS)
+		notifyEnabled := goruntime.GOOS == "darwin"
+		if cfg.Tasks.Notifications.Enabled != nil {
+			notifyEnabled = *cfg.Tasks.Notifications.Enabled
+		}
+
 		runner := task.NewRunner(store, exec.Command, runtime)
 		if err := runner.RunTask(t, task.RunOpts{
 			ContainerName:   containerName,
@@ -225,11 +232,28 @@ var taskRunCmd = &cobra.Command{
 			ClaudeConfig:    &cfg.Claude,
 			ProjectDir:      projectDir,
 			HomeDir:         homeDir,
+			Notify:          notifyEnabled,
 		}); err != nil {
 			return err
 		}
 		fmt.Printf("Task %d started (container: %s)\n", t.ID, t.ContainerID)
 		fmt.Printf("Log: %s\n", t.LogFile)
+
+		// --follow: stream logs and block until container exits
+		follow, _ := cmd.Flags().GetBool("follow")
+		if follow {
+			_ = task.TailLog(t.LogFile, true)
+			exitCode, err := runner.WaitForContainer(t.ContainerID)
+			if err != nil {
+				return err
+			}
+			// Reload task to get final status
+			t, _ = store.Load(t.ID)
+			fmt.Printf("\nTask %d: %s\n", t.ID, t.Status)
+			if exitCode != 0 {
+				os.Exit(exitCode)
+			}
+		}
 		return nil
 	},
 }
@@ -284,7 +308,29 @@ var taskLogCmd = &cobra.Command{
 			return fmt.Errorf("task %d has no log file", id)
 		}
 		follow, _ := cmd.Flags().GetBool("follow")
-		return task.TailLog(t.LogFile, follow)
+		if !follow {
+			return task.TailLog(t.LogFile, false)
+		}
+
+		// Follow mode: stream logs, then block until container exits
+		if err := task.TailLog(t.LogFile, true); err != nil {
+			// tail -f exits when the log stream ends (container stops) — not an error
+		}
+
+		if t.ContainerID == "" || t.Status != task.TaskStatusRunning {
+			return nil
+		}
+
+		// Wait for task store to reflect final status (updated by completion watcher)
+		t, err = store.Load(id)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("\nTask %d: %s\n", t.ID, t.Status)
+		if t.ExitCode != nil && *t.ExitCode != 0 {
+			os.Exit(*t.ExitCode)
+		}
+		return nil
 	},
 }
 
@@ -404,6 +450,7 @@ func init() {
 	taskRunCmd.Flags().String("branch", "", "Branch name (inline mode)")
 	taskRunCmd.Flags().String("prompt", "", "Prompt for Claude (inline mode)")
 	taskRunCmd.Flags().String("domain", "", "Domain tag (inline mode)")
+	taskRunCmd.Flags().BoolP("follow", "f", false, "Stream logs and block until task completes")
 	taskDoneCmd.Flags().Bool("merge", false, "Merge locally via Worktrunk before removing worktree (default: push only)")
 	taskListCmd.Flags().String("domain", "", "Filter by domain")
 	taskListCmd.Flags().String("status", "", "Filter by status (open, running, done)")
