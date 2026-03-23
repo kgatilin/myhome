@@ -63,33 +63,71 @@ var taskAddCmd = &cobra.Command{
 }
 
 var taskRunCmd = &cobra.Command{
-	Use:   "run <id>",
+	Use:   "run [id]",
 	Short: "Run a task: create worktree + launch container",
-	Long:  "Run a task by ID. The task must have --repo set (created via task add --repo). Uses the task description as the prompt.",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
-		if err != nil {
-			return fmt.Errorf("invalid task ID: %s", args[0])
-		}
+	Long: `Run a task by ID, or create and run inline:
 
+  myhome task run 5                              # Run existing task by ID
+  myhome task run --repo uagent --branch UAGENT-500 --prompt "/jira-start UAGENT-500"  # Inline
+`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		store, err := defaultTaskStore()
 		if err != nil {
 			return err
 		}
 
-		t, err := store.Load(id)
-		if err != nil {
-			return err
+		var t *task.Task
+
+		if len(args) == 1 {
+			// Mode 1: Run existing task by ID
+			id, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid task ID: %s", args[0])
+			}
+			t, err = store.Load(id)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Mode 2: Inline — create task from flags then run it
+			repoName, _ := cmd.Flags().GetString("repo")
+			branch, _ := cmd.Flags().GetString("branch")
+			prompt, _ := cmd.Flags().GetString("prompt")
+			domain, _ := cmd.Flags().GetString("domain")
+
+			if repoName == "" || branch == "" || prompt == "" {
+				return fmt.Errorf("inline mode requires --repo, --branch, and --prompt")
+			}
+
+			id, err := store.NextID()
+			if err != nil {
+				return err
+			}
+			t = &task.Task{
+				ID:          id,
+				Type:        task.TaskTypeRun,
+				Domain:      domain,
+				Description: prompt,
+				Status:      task.TaskStatusOpen,
+				CreatedAt:   time.Now(),
+				Repo:        repoName,
+				Branch:      branch,
+			}
+			if err := store.Save(t); err != nil {
+				return err
+			}
+			fmt.Printf("Task %d created\n", id)
 		}
+
 		if t.Repo == "" {
-			return fmt.Errorf("task %d has no repo set (add with --repo to make it runnable)", id)
+			return fmt.Errorf("task %d has no repo set (add with --repo to make it runnable)", t.ID)
 		}
 		if t.Branch == "" {
-			return fmt.Errorf("task %d has no branch set (add with --branch)", id)
+			return fmt.Errorf("task %d has no branch set (add with --branch)", t.ID)
 		}
 		if t.Status == task.TaskStatusRunning {
-			return fmt.Errorf("task %d is already running", id)
+			return fmt.Errorf("task %d is already running", t.ID)
 		}
 
 		cfgPath, err := config.DefaultConfigPath()
@@ -119,7 +157,7 @@ var taskRunCmd = &cobra.Command{
 			if err := store.Save(t); err != nil {
 				return err
 			}
-			fmt.Printf("Task %d started remotely on %s (session: %s)\n", id, remoteName, session)
+			fmt.Printf("Task %d started remotely on %s (session: %s)\n", t.ID, remoteName, session)
 			fmt.Printf("Attach with: myhome remote attach %s %s\n", remoteName, session)
 			return nil
 		}
@@ -312,8 +350,12 @@ func init() {
 	taskAddCmd.Flags().String("repo", "", "Repository name (makes task runnable)")
 	taskAddCmd.Flags().String("branch", "", "Branch name for worktree")
 	taskRunCmd.Flags().String("auth", "", "Claude auth profile")
-	taskRunCmd.Flags().String("container", "claude-code", "Container to use")
+	taskRunCmd.Flags().String("container", "", "Container to use (default: from repo config)")
 	taskRunCmd.Flags().String("remote", "", "Run on remote host instead of locally")
+	taskRunCmd.Flags().String("repo", "", "Repository name (inline mode)")
+	taskRunCmd.Flags().String("branch", "", "Branch name (inline mode)")
+	taskRunCmd.Flags().String("prompt", "", "Prompt for Claude (inline mode)")
+	taskRunCmd.Flags().String("domain", "", "Domain tag (inline mode)")
 	taskListCmd.Flags().String("domain", "", "Filter by domain")
 	taskListCmd.Flags().String("status", "", "Filter by status (open, running, done)")
 	taskLogCmd.Flags().BoolP("follow", "f", false, "Follow log output")
