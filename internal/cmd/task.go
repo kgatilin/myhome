@@ -132,14 +132,22 @@ var taskRunCmd = &cobra.Command{
 
 		containerName, _ := cmd.Flags().GetString("container")
 
+		// Look up container definition from config
+		ctrConfig, ok := cfg.Containers[containerName]
+		if !ok {
+			return fmt.Errorf("unknown container %q in myhome.yml", containerName)
+		}
+
 		runner := task.NewRunner(store, exec.Command, runtime)
 		t, err := runner.Run(task.RunOpts{
-			Repo:        repoName,
-			Branch:      args[1],
-			Description: args[2],
-			Container:   containerName,
-			AuthProfile: authProfile,
-			ProjectDir:  projectDir,
+			Repo:            repoName,
+			Branch:          args[1],
+			Description:     args[2],
+			Container:       containerName,
+			ContainerConfig: ctrConfig,
+			AuthProfile:     authProfile,
+			ProjectDir:      projectDir,
+			HomeDir:         homeDir,
 		})
 		if err != nil {
 			return err

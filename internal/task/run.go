@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgatilin/myhome/internal/config"
 )
 
 // ExecFunc creates an *exec.Cmd for the given command and arguments.
@@ -32,14 +34,16 @@ func NewRunner(store *Store, execFn ExecFunc, runtime string) *Runner {
 
 // RunOpts configures a dev run task.
 type RunOpts struct {
-	Repo        string
-	Branch      string
-	Description string
-	Container   string
-	AuthProfile string
-	Domain      string
-	ProjectDir  string
-	Runtime     string // overrides Runner.runtime if set
+	Repo            string
+	Branch          string
+	Description     string
+	Container       string
+	ContainerConfig config.Container // container definition from myhome.yml
+	AuthProfile     string
+	Domain          string
+	ProjectDir      string
+	HomeDir         string // user home dir for mount resolution
+	Runtime         string // overrides Runner.runtime if set
 }
 
 // Run creates a worktree, launches a container, and returns the resulting task.
@@ -66,18 +70,40 @@ func (r *Runner) Run(opts RunOpts) (*Task, error) {
 		return nil, fmt.Errorf("creating worktree: %s: %w", strings.TrimSpace(stderr.String()), err)
 	}
 
-	// Step 2: Build container run command
+	// Step 2: Build container run command using config from myhome.yml
 	logFile := filepath.Join(r.store.LogDir(), fmt.Sprintf("%d.log", id))
+
+	image := opts.ContainerConfig.Image
+	if image == "" {
+		image = opts.Container // fallback to bare name
+	}
 
 	containerArgs := []string{
 		"run", "-d",
 		"--name", fmt.Sprintf("task-%d", id),
 		"-v", worktreePath + ":/workspace",
 	}
+
+	// Apply firewall settings from container config
+	if opts.ContainerConfig.Firewall {
+		containerArgs = append(containerArgs, "--network", "none")
+	}
+
+	// Apply mounts from container config
+	for _, m := range resolveMounts(opts.ContainerConfig.Mounts, opts.HomeDir) {
+		containerArgs = append(containerArgs, "-v", m)
+	}
+
 	if opts.AuthProfile != "" {
 		containerArgs = append(containerArgs, "--env", "AUTH_PROFILE="+opts.AuthProfile)
 	}
-	containerArgs = append(containerArgs, opts.Container)
+	containerArgs = append(containerArgs, image)
+
+	// Apply startup commands from container config
+	if len(opts.ContainerConfig.StartupCommands) > 0 {
+		script := strings.Join(opts.ContainerConfig.StartupCommands, " && ")
+		containerArgs = append(containerArgs, "/bin/sh", "-c", script)
+	}
 
 	// Step 3: Start container, capture container ID from stdout
 	cmd = r.execFn(runtime, containerArgs...)
@@ -141,6 +167,31 @@ func (r *Runner) Stop(id int) error {
 	}
 
 	return nil
+}
+
+// resolveMounts expands mount specs (tilde, :ro suffix) for container -v flags.
+func resolveMounts(mounts []string, homeDir string) []string {
+	var flags []string
+	for _, m := range mounts {
+		readOnly := false
+		spec := m
+		if strings.HasSuffix(spec, ":ro") {
+			readOnly = true
+			spec = strings.TrimSuffix(spec, ":ro")
+		}
+		hostPath := spec
+		if hostPath == "~" {
+			hostPath = homeDir
+		} else if strings.HasPrefix(hostPath, "~/") {
+			hostPath = homeDir + hostPath[1:]
+		}
+		result := hostPath + ":" + hostPath
+		if readOnly {
+			result += ":ro"
+		}
+		flags = append(flags, result)
+	}
+	return flags
 }
 
 // startLogStream pipes container logs to a file in the background.
