@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/kgatilin/myhome/internal/config"
 )
@@ -32,55 +31,41 @@ func NewRunner(store *Store, execFn ExecFunc, runtime string) *Runner {
 	}
 }
 
-// RunOpts configures a dev run task.
+// RunOpts configures how to launch a task's container.
 type RunOpts struct {
-	Repo            string
-	Branch          string
-	Description     string
-	Container       string
+	ContainerName   string
 	ContainerConfig config.Container // container definition from myhome.yml
 	AuthProfile     string
-	Domain          string
 	ProjectDir      string
 	HomeDir         string // user home dir for mount resolution
-	Runtime         string // overrides Runner.runtime if set
 }
 
-// Run creates a worktree, launches a container, and returns the resulting task.
-func (r *Runner) Run(opts RunOpts) (*Task, error) {
-	runtime := r.runtime
-	if opts.Runtime != "" {
-		runtime = opts.Runtime
-	}
-
-	id, err := r.store.NextID()
-	if err != nil {
-		return nil, fmt.Errorf("getting next task ID: %w", err)
-	}
-
+// RunTask creates a worktree, launches a container, and updates the task in place.
+// The task must have Repo and Branch set.
+func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	// Determine worktree path: <projectDir>/.worktrees/<branch>
-	worktreePath := filepath.Join(opts.ProjectDir, ".worktrees", opts.Branch)
+	worktreePath := filepath.Join(opts.ProjectDir, ".worktrees", t.Branch)
 
 	// Step 1: Create worktree
-	cmd := r.execFn("git", "worktree", "add", worktreePath, "-b", opts.Branch)
+	cmd := r.execFn("git", "worktree", "add", worktreePath, "-b", t.Branch)
 	cmd.Dir = opts.ProjectDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("creating worktree: %s: %w", strings.TrimSpace(stderr.String()), err)
+		return fmt.Errorf("creating worktree: %s: %w", strings.TrimSpace(stderr.String()), err)
 	}
 
 	// Step 2: Build container run command using config from myhome.yml
-	logFile := filepath.Join(r.store.LogDir(), fmt.Sprintf("%d.log", id))
+	logFile := filepath.Join(r.store.LogDir(), fmt.Sprintf("%d.log", t.ID))
 
 	image := opts.ContainerConfig.Image
 	if image == "" {
-		image = opts.Container // fallback to bare name
+		image = opts.ContainerName // fallback to bare name
 	}
 
 	containerArgs := []string{
 		"run", "-d",
-		"--name", fmt.Sprintf("task-%d", id),
+		"--name", fmt.Sprintf("task-%d", t.ID),
 		"-v", worktreePath + ":/workspace",
 	}
 
@@ -106,43 +91,35 @@ func (r *Runner) Run(opts RunOpts) (*Task, error) {
 	}
 
 	// Step 3: Start container, capture container ID from stdout
+	runtime := r.runtime
 	cmd = r.execFn(runtime, containerArgs...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	stderr.Reset()
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("starting container: %s: %w", strings.TrimSpace(stderr.String()), err)
+		return fmt.Errorf("starting container: %s: %w", strings.TrimSpace(stderr.String()), err)
 	}
 	containerID := strings.TrimSpace(stdout.String())
 
 	// Step 4: Set up log streaming in background
 	if err := r.startLogStream(runtime, containerID, logFile); err != nil {
-		return nil, fmt.Errorf("setting up log stream: %w", err)
+		return fmt.Errorf("setting up log stream: %w", err)
 	}
 
-	// Step 5: Create and save the task
-	task := &Task{
-		ID:           id,
-		Type:         TaskTypeRun,
-		Domain:       opts.Domain,
-		Description:  opts.Description,
-		Status:       TaskStatusRunning,
-		CreatedAt:    time.Now(),
-		Repo:         opts.Repo,
-		Branch:       opts.Branch,
-		ContainerID:  containerID,
-		Container:    opts.Container,
-		AuthProfile:  opts.AuthProfile,
-		WorktreePath: worktreePath,
-		LogFile:      logFile,
+	// Step 5: Update task fields and persist
+	t.Status = TaskStatusRunning
+	t.Container = opts.ContainerName
+	t.ContainerID = containerID
+	t.AuthProfile = opts.AuthProfile
+	t.WorktreePath = worktreePath
+	t.LogFile = logFile
+
+	if err := r.store.Save(t); err != nil {
+		return fmt.Errorf("saving task: %w", err)
 	}
 
-	if err := r.store.Save(task); err != nil {
-		return nil, fmt.Errorf("saving task: %w", err)
-	}
-
-	return task, nil
+	return nil
 }
 
 // Stop halts the container associated with a running task.

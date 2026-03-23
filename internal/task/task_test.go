@@ -394,7 +394,7 @@ func fakeExecFailure(calls *[]execCall) ExecFunc {
 	}
 }
 
-func TestRunnerRun(t *testing.T) {
+func TestRunnerRunTask(t *testing.T) {
 	store := newTestStore(t)
 	projectDir := t.TempDir()
 
@@ -405,10 +405,6 @@ func TestRunnerRun(t *testing.T) {
 
 	var calls []execCall
 	callIdx := 0
-	// We need different output for different commands:
-	// call 0 = git worktree add (no output needed)
-	// call 1 = docker run (outputs container ID)
-	// call 2 = docker logs -f (background, no output needed)
 	execFn := func(name string, args ...string) *exec.Cmd {
 		calls = append(calls, execCall{Name: name, Args: args})
 		idx := callIdx
@@ -423,18 +419,29 @@ func TestRunnerRun(t *testing.T) {
 		}
 	}
 
-	runner := NewRunner(store, execFn, "docker")
-	task, err := runner.Run(RunOpts{
+	// Create a task first (as task add would)
+	tk := &Task{
+		ID:          1,
+		Type:        TaskTypeRun,
+		Domain:      "dev",
+		Description: "test run",
+		Status:      TaskStatusOpen,
+		CreatedAt:   time.Now(),
 		Repo:        "myrepo",
 		Branch:      "feat-1",
-		Description: "test run",
-		Container:   "claude-code",
-		AuthProfile: "work",
-		Domain:      "dev",
-		ProjectDir:  projectDir,
+	}
+	if err := store.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	runner := NewRunner(store, execFn, "docker")
+	err := runner.RunTask(tk, RunOpts{
+		ContainerName: "claude-code",
+		AuthProfile:   "work",
+		ProjectDir:    projectDir,
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("RunTask: %v", err)
 	}
 
 	// Verify git worktree command
@@ -459,24 +466,15 @@ func TestRunnerRun(t *testing.T) {
 		t.Errorf("docker args: got %v, want run -d ...", calls[1].Args)
 	}
 
-	// Verify task fields
-	if task.ID != 1 {
-		t.Errorf("ID: got %d, want 1", task.ID)
+	// Verify task was updated in place
+	if tk.Status != TaskStatusRunning {
+		t.Errorf("Status: got %q, want %q", tk.Status, TaskStatusRunning)
 	}
-	if task.Type != TaskTypeRun {
-		t.Errorf("Type: got %q, want %q", task.Type, TaskTypeRun)
+	if tk.ContainerID != "container-abc123" {
+		t.Errorf("ContainerID: got %q, want %q", tk.ContainerID, "container-abc123")
 	}
-	if task.Status != TaskStatusRunning {
-		t.Errorf("Status: got %q, want %q", task.Status, TaskStatusRunning)
-	}
-	if task.ContainerID != "container-abc123" {
-		t.Errorf("ContainerID: got %q, want %q", task.ContainerID, "container-abc123")
-	}
-	if task.Repo != "myrepo" {
-		t.Errorf("Repo: got %q, want %q", task.Repo, "myrepo")
-	}
-	if task.Branch != "feat-1" {
-		t.Errorf("Branch: got %q, want %q", task.Branch, "feat-1")
+	if tk.Container != "claude-code" {
+		t.Errorf("Container: got %q, want %q", tk.Container, "claude-code")
 	}
 
 	// Verify task was persisted
@@ -489,22 +487,81 @@ func TestRunnerRun(t *testing.T) {
 	}
 }
 
-func TestRunnerRunWorktreeFailure(t *testing.T) {
+func TestRunnerRunTaskWorktreeFailure(t *testing.T) {
 	store := newTestStore(t)
 	projectDir := t.TempDir()
 
 	var calls []execCall
 	execFn := fakeExecFailure(&calls)
 
+	tk := &Task{
+		ID:     1,
+		Type:   TaskTypeRun,
+		Status: TaskStatusOpen,
+		Repo:   "myrepo",
+		Branch: "feat-1",
+	}
+	if err := store.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
 	runner := NewRunner(store, execFn, "docker")
-	_, err := runner.Run(RunOpts{
-		Repo:       "myrepo",
-		Branch:     "feat-1",
-		Container:  "claude-code",
-		ProjectDir: projectDir,
+	err := runner.RunTask(tk, RunOpts{
+		ContainerName: "claude-code",
+		ProjectDir:    projectDir,
 	})
 	if err == nil {
 		t.Error("expected error when worktree creation fails")
+	}
+}
+
+func TestTaskAddWithRepoCreatesRunType(t *testing.T) {
+	store := newTestStore(t)
+
+	// Task with repo should be TaskTypeRun
+	tk := &Task{
+		ID:          1,
+		Type:        TaskTypeRun,
+		Description: "fix the bug",
+		Status:      TaskStatusOpen,
+		CreatedAt:   time.Now(),
+		Repo:        "myrepo",
+		Branch:      "fix-123",
+	}
+	if err := store.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := store.Load(1)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.Type != TaskTypeRun {
+		t.Errorf("Type: got %q, want %q", loaded.Type, TaskTypeRun)
+	}
+	if loaded.Repo != "myrepo" {
+		t.Errorf("Repo: got %q, want %q", loaded.Repo, "myrepo")
+	}
+	if loaded.Branch != "fix-123" {
+		t.Errorf("Branch: got %q, want %q", loaded.Branch, "fix-123")
+	}
+
+	// Task without repo should be TaskTypeGeneral
+	tk2 := &Task{
+		ID:          2,
+		Type:        TaskTypeGeneral,
+		Description: "review roadmap",
+		Status:      TaskStatusOpen,
+		CreatedAt:   time.Now(),
+	}
+	if err := store.Save(tk2); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded2, err := store.Load(2)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded2.Type != TaskTypeGeneral {
+		t.Errorf("Type: got %q, want %q", loaded2.Type, TaskTypeGeneral)
 	}
 }
 
