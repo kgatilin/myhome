@@ -28,4 +28,5 @@ func init() {
 	rootCmd.AddCommand(taskCmd)
 	rootCmd.AddCommand(vaultCmd)
 	rootCmd.AddCommand(remoteCmd)
+	rootCmd.AddCommand(workspaceCmd)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/kgatilin/myhome/internal/repo"
 	"github.com/kgatilin/myhome/internal/tools"
 	"github.com/kgatilin/myhome/internal/vault"
+	"github.com/kgatilin/myhome/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,8 @@ var initCmd = &cobra.Command{
   6. Generate ~/.mise.toml and run mise install
   7. Install system packages (brew/apt)
   8. Clone repos matching the environment
-  9. Check vault status and prompt to create if missing`,
+  9. Check vault status and prompt to create if missing
+ 10. Generate VSCode workspace files`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		configPath, err := config.DefaultConfigPath()
 		if err != nil {
@@ -64,7 +66,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	var failed bool
 
 	// Step 1: Load or create config
-	fmt.Println("[1/10] Loading config...")
+	fmt.Println("[1/11] Loading config...")
 	cfg, err := loadOrCreateConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -72,7 +74,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	fmt.Printf("  config loaded from %s\n", configPath)
 
 	// Step 2: Resolve environment
-	fmt.Printf("[2/10] Resolving environment %q...\n", envName)
+	fmt.Printf("[2/11] Resolving environment %q...\n", envName)
 	resolved, err := cfg.ResolveEnv(envName)
 	if err != nil {
 		return fmt.Errorf("resolve env: %w", err)
@@ -80,7 +82,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	fmt.Printf("  resolved: %d repos, %d tools\n", len(resolved.Repos), len(resolved.Tools))
 
 	// Step 3: Save env to state file
-	fmt.Println("[3/10] Saving state...")
+	fmt.Println("[3/11] Saving state...")
 	if err := saveStateToPath(envName, statePath); err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		failed = true
@@ -89,7 +91,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 4: Generate .gitignore
-	fmt.Println("[4/10] Generating .gitignore...")
+	fmt.Println("[4/11] Generating .gitignore...")
 	if err := gitignore.Write(cfg, homeDir); err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		failed = true
@@ -98,7 +100,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 5: Generate .ssh/config
-	fmt.Println("[5/10] Generating .ssh/config...")
+	fmt.Println("[5/11] Generating .ssh/config...")
 	if err := auth.WriteSSHConfig(cfg.Auth, homeDir); err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		failed = true
@@ -107,7 +109,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 6: Generate .gitconfig identity
-	fmt.Println("[6/10] Generating .gitconfig identity...")
+	fmt.Println("[6/11] Generating .gitconfig identity...")
 	if len(cfg.Auth) > 0 {
 		if err := identity.WriteGitconfig(homeDir, "", "", nil); err != nil {
 			fmt.Fprintf(os.Stderr, "  error: %v\n", err)
@@ -120,7 +122,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 7: Generate .mise.toml + run mise install
-	fmt.Println("[7/10] Syncing dev tools (mise)...")
+	fmt.Println("[7/11] Syncing dev tools (mise)...")
 	if err := tools.Sync(resolved.Tools, homeDir); err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		failed = true
@@ -129,7 +131,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 8: Install system packages
-	fmt.Println("[8/10] Syncing system packages...")
+	fmt.Println("[8/11] Syncing system packages...")
 	if err := packages.Sync(resolved.Packages, plat); err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		failed = true
@@ -138,7 +140,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 9: Clone repos
-	fmt.Println("[9/10] Cloning repos...")
+	fmt.Println("[9/11] Cloning repos...")
 	if err := repo.Sync(resolved, homeDir); err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		failed = true
@@ -147,7 +149,7 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 	}
 
 	// Step 10: Check vault status.
-	fmt.Println("[10/10] Checking vault...")
+	fmt.Println("[10/11] Checking vault...")
 	dbPath := vault.DefaultVaultPath(homeDir)
 	keyFile := vault.DefaultKeyFile(homeDir)
 	vaultStatus := vault.CheckStatus(dbPath, keyFile, nil)
@@ -155,6 +157,15 @@ func runInit(envName, configPath, homeDir, statePath string, plat platform.Platf
 		fmt.Println("  vault found")
 	} else {
 		fmt.Println("  vault not found — run 'myhome vault init' to create one")
+	}
+
+	// Step 11: Generate VSCode workspace files
+	fmt.Println("[11/11] Generating VSCode workspace files...")
+	if err := workspace.WriteAll(cfg, homeDir); err != nil {
+		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
+		failed = true
+	} else {
+		fmt.Println("  workspace files written")
 	}
 
 	if failed {
