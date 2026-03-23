@@ -211,6 +211,8 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 }
 
 // createWorktree creates a worktree using Worktrunk (wt) if available, falling back to git.
+// This always runs on the host (before container launch), so wt does not need to be
+// installed inside container images. The container only receives the mounted worktree.
 func (r *Runner) createWorktree(branch, worktreePath, projectDir string) error {
 	var stderr bytes.Buffer
 
@@ -242,6 +244,7 @@ func (r *Runner) createWorktree(branch, worktreePath, projectDir string) error {
 
 // Done completes a task: pushes the branch and cleans up the worktree.
 // Uses Worktrunk (wt merge/remove) if available, falls back to git.
+// This runs on the host (myhome task done), not inside the container.
 func (r *Runner) Done(id int, merge bool) error {
 	t, err := r.store.Load(id)
 	if err != nil {
