@@ -1,1 +1,1 @@
-github.com/kgatilin/archlint/cmd/archlint@latest
+source:github.com/kgatilin/archlint cmd/archlint
