@@ -131,12 +131,14 @@ var taskRunCmd = &cobra.Command{
 
 		homeDir, _ := os.UserHomeDir()
 
-		// Resolve repo path from config
+		// Resolve repo path and container from config
 		var projectDir string
+		var repoContainer string
 		for _, r := range cfg.Repos {
 			base := filepath.Base(r.Path)
 			if base == t.Repo || r.Path == t.Repo {
 				projectDir = filepath.Join(homeDir, r.Path)
+				repoContainer = r.Container
 				break
 			}
 		}
@@ -144,7 +146,13 @@ var taskRunCmd = &cobra.Command{
 			return fmt.Errorf("unknown repo: %s", t.Repo)
 		}
 
+		// Container priority: --container flag > repo config > default
 		containerName, _ := cmd.Flags().GetString("container")
+		if containerName == "" || containerName == "claude-code" {
+			if repoContainer != "" {
+				containerName = repoContainer
+			}
+		}
 
 		// Look up container definition from config
 		ctrConfig, ok := cfg.Containers[containerName]
@@ -157,6 +165,7 @@ var taskRunCmd = &cobra.Command{
 			ContainerName:   containerName,
 			ContainerConfig: ctrConfig,
 			AuthProfile:     authProfile,
+			ClaudeConfig:    &cfg.Claude,
 			ProjectDir:      projectDir,
 			HomeDir:         homeDir,
 		}); err != nil {

@@ -24,9 +24,10 @@ type Env struct {
 
 // Repo defines a git repository to manage.
 type Repo struct {
-	Path      string       `yaml:"path"`
-	URL       string       `yaml:"url"`
-	Env       string       `yaml:"env"`
+	Path      string          `yaml:"path"`
+	URL       string          `yaml:"url"`
+	Env       string          `yaml:"env"`
+	Container string          `yaml:"container,omitempty"`
 	Worktrees *WorktreeConfig `yaml:"worktrees,omitempty"`
 }
 
@@ -74,6 +75,7 @@ type Container struct {
 	GitBackup       bool     `yaml:"git_backup"`
 	StartupCommands []string `yaml:"startup_commands,omitempty"`
 	Mounts          []string `yaml:"mounts,omitempty"`
+	Volumes         []string `yaml:"volumes,omitempty"`
 }
 
 // ClaudeConfig holds Claude-specific settings.

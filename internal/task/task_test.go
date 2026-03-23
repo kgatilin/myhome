@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -398,10 +399,7 @@ func TestRunnerRunTask(t *testing.T) {
 	store := newTestStore(t)
 	projectDir := t.TempDir()
 
-	// Initialize a git repo so worktree add would work in real life.
-	// But since we mock exec, we just need the directory to exist.
-	worktreeDir := filepath.Join(projectDir, ".worktrees", "feat-1")
-	os.MkdirAll(worktreeDir, 0o755)
+	// Don't pre-create worktree dir — RunTask should call git worktree add
 
 	var calls []execCall
 	callIdx := 0
@@ -462,8 +460,13 @@ func TestRunnerRunTask(t *testing.T) {
 	if calls[1].Name != "docker" {
 		t.Errorf("second call: got %q, want docker", calls[1].Name)
 	}
-	if calls[1].Args[0] != "run" || calls[1].Args[1] != "-d" {
-		t.Errorf("docker args: got %v, want run -d ...", calls[1].Args)
+	if calls[1].Args[0] != "run" || calls[1].Args[1] != "-d" || calls[1].Args[2] != "--rm" {
+		t.Errorf("docker args: got %v, want run -d --rm ...", calls[1].Args)
+	}
+	// Verify prompt is passed to claude
+	lastArg := calls[1].Args[len(calls[1].Args)-1]
+	if !strings.Contains(lastArg, "test run") {
+		t.Errorf("expected prompt in last arg, got %q", lastArg)
 	}
 
 	// Verify task was updated in place
