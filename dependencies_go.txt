@@ -1,0 +1,1 @@
+github.com/kgatilin/archlint/cmd/archlint@latest

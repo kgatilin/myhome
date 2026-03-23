@@ -60,6 +60,24 @@ State file: `~/.myhome-state.yml` (gitignored, tracks current env and runtime st
 - **Cleanup is report-only by default** — `--apply` flag for interactive confirmation
 - **Agent users are OS-level** — real users with own homes, not containers
 
+### Architecture Linting
+
+This project uses [archlint](https://github.com/kgatilin/archlint) for architecture analysis.
+An MCP server is available — when running in a container, `archlint serve` provides real-time feedback.
+
+Available MCP tools (via `archlint serve`):
+- `check_violations` — check for circular deps, high coupling, SOLID violations, god classes
+- `analyze_file` — full file analysis (types, functions, dependencies, health score)
+- `get_architecture` — get full architecture graph or filtered subset
+- `get_dependencies` — dependency graph for a file or package
+- `get_callgraph` — call graph from an entry point
+- `analyze_change` — impact analysis of a file change
+
+Key metrics: afferent/efferent coupling, instability, abstractness, SRP/DIP/ISP violations,
+god classes, hub nodes, feature envy, shotgun surgery, cyclic dependencies.
+
+Run `archlint collect . -l go -o architecture.yaml` to generate a full architecture snapshot.
+
 ### Dependencies
 
 - `github.com/spf13/cobra` — CLI framework
