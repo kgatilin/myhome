@@ -17,6 +17,7 @@ const (
 	TaskStatusOpen    TaskStatus = "open"
 	TaskStatusRunning TaskStatus = "running"
 	TaskStatusDone    TaskStatus = "done"
+	TaskStatusFailed  TaskStatus = "failed"
 )
 
 // Task represents a tracked unit of work.
@@ -37,4 +38,5 @@ type Task struct {
 	WorktreePath string `yaml:"worktree_path,omitempty"`
 	LogFile      string `yaml:"log_file,omitempty"`
 	Iterations   int    `yaml:"iterations,omitempty"`
+	ExitCode     *int   `yaml:"exit_code,omitempty"`
 }

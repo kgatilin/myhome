@@ -92,7 +92,13 @@ type AuthProfile struct {
 
 // TasksConfig holds task-related settings.
 type TasksConfig struct {
-	Dir string `yaml:"dir,omitempty"` // defaults to ~/tasks
+	Dir           string              `yaml:"dir,omitempty"` // defaults to ~/tasks
+	Notifications NotificationsConfig `yaml:"notifications,omitempty"`
+}
+
+// NotificationsConfig controls desktop notifications for task completion.
+type NotificationsConfig struct {
+	Enabled *bool `yaml:"enabled,omitempty"` // defaults to true on macOS
 }
 
 // Remote defines a remote host for SSH + tmux session management.
