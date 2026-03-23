@@ -46,7 +46,7 @@ type RunOpts struct {
 // Task description is used as the prompt. If the worktree already exists (re-run),
 // skips creation and launches a new container on the existing worktree.
 func (r *Runner) RunTask(t *Task, opts RunOpts) error {
-	// Determine worktree path: <projectDir>/.worktrees/<branch>
+	// Determine worktree path: <projectDir>/.worktrees/<sanitizedBranch>
 	sanitizedBranch := strings.ReplaceAll(t.Branch, "/", "--")
 	worktreePath := filepath.Join(opts.ProjectDir, ".worktrees", sanitizedBranch)
 
@@ -83,11 +83,39 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		)
 	}
 
-	// Mount the worktree as /workspace
+	// Mount the full project dir so git worktree pointers resolve inside the container.
+	// Git worktree .git files contain absolute host paths that don't exist in the container.
+	// We create temp copies with paths rewritten to /project and mount them over the originals.
+	containerWorkdir := "/project/.worktrees/" + sanitizedBranch
 	containerArgs = append(containerArgs,
-		"-v", worktreePath+":/workspace",
-		"-w", "/workspace",
+		"-v", opts.ProjectDir+":/project",
+		"-w", containerWorkdir,
 	)
+
+	// Create temp .git pointer file with container-relative path
+	wtGitFile := filepath.Join(worktreePath, ".git")
+	if data, err := os.ReadFile(wtGitFile); err == nil {
+		fixed := strings.ReplaceAll(string(data), opts.ProjectDir, "/project")
+		tmpGitFile := filepath.Join(os.TempDir(), fmt.Sprintf("myhome-task-%d-dotgit", t.ID))
+		if err := os.WriteFile(tmpGitFile, []byte(fixed), 0o644); err == nil {
+			containerArgs = append(containerArgs,
+				"-v", tmpGitFile+":"+containerWorkdir+"/.git:ro",
+			)
+		}
+	}
+
+	// Create temp gitdir reverse pointer with container-relative path
+	wtName := filepath.Base(worktreePath)
+	gitdirFile := filepath.Join(opts.ProjectDir, ".git", "worktrees", wtName, "gitdir")
+	if data, err := os.ReadFile(gitdirFile); err == nil {
+		fixed := strings.ReplaceAll(string(data), opts.ProjectDir, "/project")
+		tmpGitdirFile := filepath.Join(os.TempDir(), fmt.Sprintf("myhome-task-%d-gitdir", t.ID))
+		if err := os.WriteFile(tmpGitdirFile, []byte(fixed), 0o644); err == nil {
+			containerArgs = append(containerArgs,
+				"-v", tmpGitdirFile+":/project/.git/worktrees/"+wtName+"/gitdir:ro",
+			)
+		}
+	}
 
 	// Mount Claude config dir
 	claudeConfigDir := "~/.claude"
@@ -138,6 +166,7 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	// Command: build startup script + claude with prompt
 	prompt := t.Description
 	startupScript := ""
+
 	for _, sc := range opts.ContainerConfig.StartupCommands {
 		startupScript += sc + " ; "
 	}
