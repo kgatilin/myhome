@@ -80,7 +80,7 @@ var taskRunCmd = &cobra.Command{
 		var t *task.Task
 
 		if len(args) == 1 {
-			// Mode 1: Run existing task by ID
+			// Mode 1: Run existing task by ID (supports re-runs on same worktree)
 			id, err := strconv.Atoi(args[0])
 			if err != nil {
 				return fmt.Errorf("invalid task ID: %s", args[0])
@@ -88,6 +88,15 @@ var taskRunCmd = &cobra.Command{
 			t, err = store.Load(id)
 			if err != nil {
 				return err
+			}
+			// Allow overriding prompt for re-runs
+			prompt, _ := cmd.Flags().GetString("prompt")
+			if prompt != "" {
+				t.Description = prompt
+			}
+			// Reset status so it can be re-run
+			if t.Status == task.TaskStatusRunning {
+				t.Status = task.TaskStatusOpen
 			}
 		} else {
 			// Mode 2: Inline — create task from flags then run it
@@ -271,7 +280,7 @@ var taskLogCmd = &cobra.Command{
 
 var taskDoneCmd = &cobra.Command{
 	Use:   "done <id>",
-	Short: "Mark task complete",
+	Short: "Push branch, clean up worktree, mark task complete",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		store, err := defaultTaskStore()
@@ -282,10 +291,39 @@ var taskDoneCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid task ID: %s", args[0])
 		}
-		if err := store.MarkDone(id); err != nil {
+
+		t, err := store.Load(id)
+		if err != nil {
 			return err
 		}
-		fmt.Printf("Task %d marked done\n", id)
+
+		// Simple tasks — just mark done
+		if t.WorktreePath == "" {
+			if err := store.MarkDone(id); err != nil {
+				return err
+			}
+			fmt.Printf("Task %d marked done\n", id)
+			return nil
+		}
+
+		// Run tasks — push + cleanup worktree
+		merge, _ := cmd.Flags().GetBool("merge")
+
+		cfgPath, _ := config.DefaultConfigPath()
+		cfg, err := config.Load(cfgPath)
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+		runtime, err := container.DetectRuntime(cfg.ContainerRuntime)
+		if err != nil {
+			return err
+		}
+
+		runner := task.NewRunner(store, exec.Command, runtime)
+		if err := runner.Done(id, merge); err != nil {
+			return err
+		}
+		fmt.Printf("Task %d done: branch pushed, worktree cleaned up\n", id)
 		return nil
 	},
 }
@@ -356,6 +394,7 @@ func init() {
 	taskRunCmd.Flags().String("branch", "", "Branch name (inline mode)")
 	taskRunCmd.Flags().String("prompt", "", "Prompt for Claude (inline mode)")
 	taskRunCmd.Flags().String("domain", "", "Domain tag (inline mode)")
+	taskDoneCmd.Flags().Bool("merge", false, "Merge locally via Worktrunk before removing worktree (default: push only)")
 	taskListCmd.Flags().String("domain", "", "Filter by domain")
 	taskListCmd.Flags().String("status", "", "Filter by status (open, running, done)")
 	taskLogCmd.Flags().BoolP("follow", "f", false, "Follow log output")

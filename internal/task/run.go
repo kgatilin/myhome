@@ -41,29 +41,23 @@ type RunOpts struct {
 	HomeDir         string // user home dir for mount resolution
 }
 
-// RunTask creates a worktree, launches a container with Claude, and updates the task in place.
-// The task must have Repo and Branch set. Task description is used as the prompt.
+// RunTask creates a worktree (via Worktrunk or git), launches a container with Claude,
+// and updates the task in place. The task must have Repo and Branch set.
+// Task description is used as the prompt. If the worktree already exists (re-run),
+// skips creation and launches a new container on the existing worktree.
 func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	// Determine worktree path: <projectDir>/.worktrees/<branch>
 	worktreePath := filepath.Join(opts.ProjectDir, ".worktrees", t.Branch)
 
-	// Step 1: Create worktree (skip if already exists)
+	// Step 1: Create worktree (skip if already exists — supports re-runs)
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		cmd := r.execFn("git", "worktree", "add", worktreePath, "-b", t.Branch)
-		cmd.Dir = opts.ProjectDir
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			// Branch might already exist, try without -b
-			cmd = r.execFn("git", "worktree", "add", worktreePath, t.Branch)
-			cmd.Dir = opts.ProjectDir
-			stderr.Reset()
-			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("creating worktree: %s: %w", strings.TrimSpace(stderr.String()), err)
-			}
+		if err := r.createWorktree(t.Branch, worktreePath, opts.ProjectDir); err != nil {
+			return err
 		}
 	}
+
+	// Track iteration count
+	t.Iterations++
 
 	// Step 2: Build container run command matching the cod alias behavior
 	logFile := filepath.Join(r.store.LogDir(), fmt.Sprintf("%d.log", t.ID))
@@ -178,6 +172,80 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	}
 
 	return nil
+}
+
+// createWorktree creates a worktree using Worktrunk (wt) if available, falling back to git.
+func (r *Runner) createWorktree(branch, worktreePath, projectDir string) error {
+	var stderr bytes.Buffer
+
+	// Try Worktrunk first: wt switch --create <branch>
+	wtCmd := r.execFn("wt", "switch", "--create", branch)
+	wtCmd.Dir = projectDir
+	wtCmd.Stderr = &stderr
+	if err := wtCmd.Run(); err == nil {
+		return nil // Worktrunk handled it (creates in its configured location)
+	}
+
+	// Fallback to git worktree
+	stderr.Reset()
+	cmd := r.execFn("git", "worktree", "add", worktreePath, "-b", branch)
+	cmd.Dir = projectDir
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// Branch might already exist, try without -b
+		stderr.Reset()
+		cmd = r.execFn("git", "worktree", "add", worktreePath, branch)
+		cmd.Dir = projectDir
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("creating worktree: %s: %w", strings.TrimSpace(stderr.String()), err)
+		}
+	}
+	return nil
+}
+
+// Done completes a task: pushes the branch and cleans up the worktree.
+// Uses Worktrunk (wt merge/remove) if available, falls back to git.
+func (r *Runner) Done(id int, merge bool) error {
+	t, err := r.store.Load(id)
+	if err != nil {
+		return fmt.Errorf("loading task: %w", err)
+	}
+	if t.WorktreePath == "" {
+		return r.store.MarkDone(id)
+	}
+
+	var stderr bytes.Buffer
+
+	// Push the branch first
+	cmd := r.execFn("git", "push", "origin", t.Branch)
+	cmd.Dir = t.WorktreePath
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("pushing branch: %s: %w", strings.TrimSpace(stderr.String()), err)
+	}
+
+	if merge {
+		// Try Worktrunk merge (squash → rebase → merge → remove)
+		stderr.Reset()
+		wtCmd := r.execFn("wt", "merge")
+		wtCmd.Dir = t.WorktreePath
+		wtCmd.Stderr = &stderr
+		if err := wtCmd.Run(); err != nil {
+			// Fallback: just remove the worktree, let CI handle the merge
+			fmt.Printf("wt merge failed (%v), removing worktree only\n", err)
+		}
+	}
+
+	// Remove worktree if it still exists
+	if _, err := os.Stat(t.WorktreePath); err == nil {
+		stderr.Reset()
+		cmd = r.execFn("git", "worktree", "remove", t.WorktreePath)
+		cmd.Stderr = &stderr
+		_ = cmd.Run() // Best effort
+	}
+
+	return r.store.MarkDone(id)
 }
 
 // Stop halts the container associated with a running task.

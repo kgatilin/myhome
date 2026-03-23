@@ -442,29 +442,32 @@ func TestRunnerRunTask(t *testing.T) {
 		t.Fatalf("RunTask: %v", err)
 	}
 
-	// Verify git worktree command
+	// Verify worktree creation (tries wt first, falls back to git)
 	if len(calls) < 1 {
 		t.Fatal("expected at least 1 exec call")
 	}
-	if calls[0].Name != "git" {
-		t.Errorf("first call: got %q, want git", calls[0].Name)
+	if calls[0].Name != "wt" && calls[0].Name != "git" {
+		t.Errorf("first call: got %q, want wt or git", calls[0].Name)
 	}
-	if calls[0].Args[0] != "worktree" || calls[0].Args[1] != "add" {
-		t.Errorf("git args: got %v, want worktree add ...", calls[0].Args)
+	if calls[0].Name == "wt" {
+		if calls[0].Args[0] != "switch" || calls[0].Args[1] != "--create" {
+			t.Errorf("wt args: got %v, want switch --create ...", calls[0].Args)
+		}
 	}
 
-	// Verify container run command
-	if len(calls) < 2 {
-		t.Fatal("expected at least 2 exec calls")
+	// Verify container run command (after worktree creation)
+	dockerIdx := 1 // wt succeeded, docker is second call
+	if len(calls) <= dockerIdx {
+		t.Fatal("expected docker exec call after worktree")
 	}
-	if calls[1].Name != "docker" {
-		t.Errorf("second call: got %q, want docker", calls[1].Name)
+	if calls[dockerIdx].Name != "docker" {
+		t.Errorf("docker call: got %q, want docker", calls[dockerIdx].Name)
 	}
-	if calls[1].Args[0] != "run" || calls[1].Args[1] != "-d" || calls[1].Args[2] != "--rm" {
-		t.Errorf("docker args: got %v, want run -d --rm ...", calls[1].Args)
+	if calls[dockerIdx].Args[0] != "run" || calls[dockerIdx].Args[1] != "-d" || calls[dockerIdx].Args[2] != "--rm" {
+		t.Errorf("docker args: got %v, want run -d --rm ...", calls[dockerIdx].Args)
 	}
 	// Verify prompt is passed to claude
-	lastArg := calls[1].Args[len(calls[1].Args)-1]
+	lastArg := calls[dockerIdx].Args[len(calls[dockerIdx].Args)-1]
 	if !strings.Contains(lastArg, "test run") {
 		t.Errorf("expected prompt in last arg, got %q", lastArg)
 	}

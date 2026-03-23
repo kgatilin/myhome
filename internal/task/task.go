@@ -36,4 +36,5 @@ type Task struct {
 	AuthProfile  string `yaml:"auth_profile,omitempty"`
 	WorktreePath string `yaml:"worktree_path,omitempty"`
 	LogFile      string `yaml:"log_file,omitempty"`
+	Iterations   int    `yaml:"iterations,omitempty"`
 }
