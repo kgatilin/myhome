@@ -8,6 +8,7 @@ type AgentConfig struct {
 	SystemPrompt string            `yaml:"system_prompt,omitempty"`
 	AllowedTools []string          `yaml:"allowed_tools,omitempty"`
 	MaxBudgetUSD float64           `yaml:"max_budget_usd,omitempty"`
+	MaxTurns     int               `yaml:"max_turns,omitempty"`
 	Identity     AgentIdentity     `yaml:"identity,omitempty"`
 	Secrets      AgentSecrets      `yaml:"secrets,omitempty"`
 	Env          map[string]string `yaml:"env,omitempty"`
