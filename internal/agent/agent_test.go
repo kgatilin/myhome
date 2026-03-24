@@ -190,7 +190,10 @@ func TestBuildContainerArgs(t *testing.T) {
 	}
 	cfg := &config.Config{}
 
-	args := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	args, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	if err != nil {
+		t.Fatalf("buildContainerArgs: %v", err)
+	}
 
 	// Check key args are present
 	argStr := strings.Join(args, " ")
@@ -212,5 +215,123 @@ func TestBuildContainerArgs(t *testing.T) {
 	}
 	if !strings.Contains(argStr, "claude:latest") {
 		t.Error("missing image name")
+	}
+}
+
+func TestBuildContainerArgsSSHKey(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(dir)
+	mgr := NewManager(store, exec.Command, "docker", "/home/testuser")
+
+	// Create a test vault with SSH key attachment
+	v := createTestVaultWithSSHKey(t, "personal", "fake-ssh-key-data")
+	mgr.Vault = v
+
+	agentCfg := config.AgentConfig{
+		Container: "claude-personal",
+		Identity: config.AgentIdentity{
+			SSH: "personal",
+			Git: config.AgentGitIdentity{
+				Name:  "Test User",
+				Email: "test@example.com",
+			},
+		},
+	}
+	ctrCfg := config.Container{
+		Image:           "claude:latest",
+		StartupCommands: []string{"exec claude -p {{.Prompt}}"},
+	}
+	cfg := &config.Config{}
+
+	args, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	if err != nil {
+		t.Fatalf("buildContainerArgs: %v", err)
+	}
+
+	argStr := strings.Join(args, " ")
+
+	// Should have tmpfs mount
+	if !strings.Contains(argStr, "--tmpfs /run/agent-ssh:size=1m,mode=0700") {
+		t.Error("missing tmpfs mount for SSH key")
+	}
+
+	// Should have GIT_SSH_COMMAND pointing to tmpfs key
+	if !strings.Contains(argStr, "GIT_SSH_COMMAND=ssh -i /run/agent-ssh/id_ed25519 -o StrictHostKeyChecking=no") {
+		t.Error("missing GIT_SSH_COMMAND env var")
+	}
+
+	// Should have base64 encoded key env var
+	if !strings.Contains(argStr, "_AGENT_SSH_KEY_B64=") {
+		t.Error("missing _AGENT_SSH_KEY_B64 env var")
+	}
+
+	// Startup script should contain SSH key decode preamble
+	if !strings.Contains(argStr, "base64 -d > /run/agent-ssh/id_ed25519") {
+		t.Error("missing SSH key decode in startup script")
+	}
+}
+
+func TestBuildContainerArgsVaultSecrets(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(dir)
+	mgr := NewManager(store, exec.Command, "docker", "/home/testuser")
+
+	// Create a test vault with secrets
+	v := createTestVaultWithSecrets(t, map[string]string{
+		"github-pat-personal": "ghp_abc123",
+		"alpaca-api-key":      "APCA-KEY-xyz",
+	})
+	mgr.Vault = v
+
+	agentCfg := config.AgentConfig{
+		Container: "claude-personal",
+		Secrets: config.AgentSecrets{
+			Vault: []string{
+				"vault://github-pat-personal",
+				"vault://alpaca-api-key",
+			},
+		},
+	}
+	ctrCfg := config.Container{
+		Image:           "claude:latest",
+		StartupCommands: []string{"exec claude -p {{.Prompt}}"},
+	}
+	cfg := &config.Config{}
+
+	args, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	if err != nil {
+		t.Fatalf("buildContainerArgs: %v", err)
+	}
+
+	argStr := strings.Join(args, " ")
+
+	// Should have secrets as env vars with uppercased, underscore-separated names
+	if !strings.Contains(argStr, "GITHUB_PAT_PERSONAL=ghp_abc123") {
+		t.Error("missing GITHUB_PAT_PERSONAL env var")
+	}
+	if !strings.Contains(argStr, "ALPACA_API_KEY=APCA-KEY-xyz") {
+		t.Error("missing ALPACA_API_KEY env var")
+	}
+}
+
+func TestBuildContainerArgsSSHNoVault(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(dir)
+	mgr := NewManager(store, exec.Command, "docker", "/home/testuser")
+	// Vault not set
+
+	agentCfg := config.AgentConfig{
+		Container: "claude-personal",
+		Identity:  config.AgentIdentity{SSH: "personal"},
+	}
+	ctrCfg := config.Container{
+		Image:           "claude:latest",
+		StartupCommands: []string{"exec claude -p {{.Prompt}}"},
+	}
+	cfg := &config.Config{}
+
+	_, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	if err == nil {
+		t.Error("buildContainerArgs should fail when SSH key requested but no vault set")
 	}
 }

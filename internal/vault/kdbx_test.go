@@ -219,6 +219,89 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestGetAttachment(t *testing.T) {
+	dbPath := createTestVaultWithAttachment(t, "testpass",
+		"SSH Keys", "personal", "ssh-ed25519-key-data-here")
+
+	v, err := OpenKDBX(dbPath, "", "testpass")
+	if err != nil {
+		t.Fatalf("OpenKDBX() error: %v", err)
+	}
+
+	got, err := v.GetAttachment("SSH Keys/personal", "personal")
+	if err != nil {
+		t.Fatalf("GetAttachment() error: %v", err)
+	}
+	if string(got) != "ssh-ed25519-key-data-here" {
+		t.Errorf("GetAttachment() = %q, want %q", string(got), "ssh-ed25519-key-data-here")
+	}
+}
+
+func TestGetAttachmentNotFound(t *testing.T) {
+	dbPath := createTestVault(t, "testpass", []testEntry{
+		{group: "SSH Keys", title: "mykey", password: ""},
+	})
+
+	v, err := OpenKDBX(dbPath, "", "testpass")
+	if err != nil {
+		t.Fatalf("OpenKDBX() error: %v", err)
+	}
+
+	_, err = v.GetAttachment("SSH Keys/mykey", "mykey")
+	if err == nil {
+		t.Fatal("GetAttachment() should fail when no attachment exists")
+	}
+}
+
+// createTestVaultWithAttachment creates a vault with an entry that has a binary attachment.
+func createTestVaultWithAttachment(t *testing.T, password, group, name, content string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.kdbx")
+
+	db := gokeepasslib.NewDatabase(
+		gokeepasslib.WithDatabaseKDBXVersion4(),
+	)
+	db.Credentials = gokeepasslib.NewPasswordCredentials(password)
+
+	rootGroup := gokeepasslib.NewGroup()
+	rootGroup.Name = "Root"
+
+	subGroup := gokeepasslib.NewGroup()
+	subGroup.Name = group
+
+	entry := gokeepasslib.NewEntry()
+	entry.Values = append(entry.Values, gokeepasslib.ValueData{
+		Key:   "Title",
+		Value: gokeepasslib.V{Content: name},
+	})
+
+	// Add binary attachment
+	binary := db.AddBinary([]byte(content))
+	entry.Binaries = append(entry.Binaries, binary.CreateReference(name))
+
+	subGroup.Entries = append(subGroup.Entries, entry)
+	rootGroup.Groups = append(rootGroup.Groups, subGroup)
+	db.Content.Root.Groups = []gokeepasslib.Group{rootGroup}
+
+	if err := db.LockProtectedEntries(); err != nil {
+		t.Fatalf("lock protected entries: %v", err)
+	}
+
+	f, err := os.Create(dbPath)
+	if err != nil {
+		t.Fatalf("create vault file: %v", err)
+	}
+	defer f.Close()
+
+	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
+		t.Fatalf("encode vault: %v", err)
+	}
+
+	return dbPath
+}
+
 func TestResolveVaultRef(t *testing.T) {
 	dbPath := createTestVault(t, "testpass", []testEntry{
 		{title: "my-pat", password: "ghp_abc123"},
