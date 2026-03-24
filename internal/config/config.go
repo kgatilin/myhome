@@ -15,6 +15,7 @@ type Config struct {
 	Tasks            TasksConfig               `yaml:"tasks"`
 	Remotes          map[string]Remote         `yaml:"remotes,omitempty"`
 	Schedules        []Schedule                `yaml:"schedules,omitempty"`
+	Agents           map[string]AgentConfig    `yaml:"agents,omitempty"`
 }
 
 // Env defines an environment profile with included environment tags.
@@ -29,6 +30,14 @@ type Repo struct {
 	Env       string          `yaml:"env"`
 	Container string          `yaml:"container,omitempty"`
 	Worktrees *WorktreeConfig `yaml:"worktrees,omitempty"`
+	PreRun    []PreRunHook    `yaml:"pre_run,omitempty"`
+}
+
+// PreRunHook defines a pattern-matched command that runs on the host before container launch.
+// If the task description matches the pattern, the command runs and its output is appended to the prompt.
+type PreRunHook struct {
+	Match string `yaml:"match"` // regex pattern to match in task description
+	Run   string `yaml:"run"`   // shell command to execute; capture groups available as $1, $2, etc.
 }
 
 // WorktreeConfig configures worktree behavior for a repo.
@@ -47,79 +56,6 @@ type PackageSet struct {
 // AuthHost configures SSH auth for a host.
 type AuthHost struct {
 	Key string `yaml:"key"`
-}
-
-// AgentTemplate defines a template for creating agent users.
-type AgentTemplate struct {
-	TemplateRepo string        `yaml:"template_repo"`
-	Service      ServiceConfig `yaml:"service"`
-}
-
-// ServiceConfig defines how an agent service runs.
-type ServiceConfig struct {
-	Command string `yaml:"command"`
-	Restart string `yaml:"restart"`
-}
-
-// User defines an agent user.
-type User struct {
-	Env      string `yaml:"env"`
-	Template string `yaml:"template"`
-}
-
-// Container defines a container image and its run configuration.
-type Container struct {
-	Dockerfile      string            `yaml:"dockerfile"`
-	Image           string            `yaml:"image"`
-	Firewall        bool              `yaml:"firewall"`
-	GitBackup       bool              `yaml:"git_backup"`
-	StartupCommands []string          `yaml:"startup_commands,omitempty"`
-	Mounts          []string          `yaml:"mounts,omitempty"`
-	Volumes         []string          `yaml:"volumes,omitempty"`
-	Env             map[string]string `yaml:"env,omitempty"`
-	HomeDir         string            `yaml:"home_dir,omitempty"` // container user home, default /home/node
-}
-
-// ClaudeConfig holds Claude-specific settings.
-type ClaudeConfig struct {
-	ConfigDir    string                  `yaml:"config_dir"`
-	AuthProfiles map[string]AuthProfile `yaml:"auth_profiles"`
-}
-
-// AuthProfile defines auth credentials for a Claude profile.
-type AuthProfile struct {
-	AuthFile string            `yaml:"auth_file"`
-	Env      map[string]string `yaml:"env,omitempty"`
-}
-
-// TasksConfig holds task-related settings.
-type TasksConfig struct {
-	Dir           string              `yaml:"dir,omitempty"` // defaults to ~/tasks
-	Notifications NotificationsConfig `yaml:"notifications,omitempty"`
-}
-
-// NotificationsConfig controls desktop notifications for task completion.
-type NotificationsConfig struct {
-	Enabled *bool `yaml:"enabled,omitempty"` // defaults to true on macOS
-}
-
-// Remote defines a remote host for SSH + tmux session management.
-type Remote struct {
-	Host    string `yaml:"host"`              // user@host
-	Home    string `yaml:"home"`              // remote home path
-	Env     string `yaml:"env"`               // environment tag
-	Command string `yaml:"command,omitempty"` // command to run (default: "claude -p")
-}
-
-// Schedule defines a recurring task schedule.
-type Schedule struct {
-	ID        string `yaml:"id"`
-	Prompt    string `yaml:"prompt"`
-	Cron      string `yaml:"cron"`
-	Container string `yaml:"container,omitempty"`
-	Auth      string `yaml:"auth,omitempty"`
-	Workdir   string `yaml:"workdir,omitempty"`
-	Domain    string `yaml:"domain,omitempty"`
 }
 
 // ResolvedEnv holds the merged repos/tools/packages for a resolved environment.

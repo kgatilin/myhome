@@ -29,4 +29,6 @@ func init() {
 	rootCmd.AddCommand(vaultCmd)
 	rootCmd.AddCommand(remoteCmd)
 	rootCmd.AddCommand(workspaceCmd)
+	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(daemonCmd)
 }
