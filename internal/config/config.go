@@ -31,6 +31,7 @@ type Repo struct {
 	Container string          `yaml:"container,omitempty"`
 	Worktrees *WorktreeConfig `yaml:"worktrees,omitempty"`
 	PreRun    []PreRunHook    `yaml:"pre_run,omitempty"`
+	Workflow  *WorkflowConfig `yaml:"workflow,omitempty"`
 }
 
 // PreRunHook defines a pattern-matched command that runs on the host before container launch.

@@ -20,6 +20,15 @@ const (
 	TaskStatusFailed  TaskStatus = "failed"
 )
 
+// StageStatus represents the state of a workflow stage.
+type StageStatus string
+
+const (
+	StageStatusPending  StageStatus = "pending"
+	StageStatusRunning  StageStatus = "running"
+	StageStatusComplete StageStatus = "complete"
+)
+
 // Task represents a tracked unit of work.
 type Task struct {
 	ID          int        `yaml:"id"`
@@ -39,4 +48,8 @@ type Task struct {
 	LogFile      string `yaml:"log_file,omitempty"`
 	Iterations   int    `yaml:"iterations,omitempty"`
 	ExitCode     *int   `yaml:"exit_code,omitempty"`
+	// Workflow fields
+	Stage          string            `yaml:"stage,omitempty"`           // current workflow stage name
+	StageStatus    StageStatus       `yaml:"stage_status,omitempty"`    // pending, running, complete
+	WorkflowParams map[string]string `yaml:"workflow_params,omitempty"` // params for prompt interpolation
 }
