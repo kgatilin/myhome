@@ -265,7 +265,7 @@ var taskRunCmd = &cobra.Command{
 		// --follow: stream logs and block until container exits
 		follow, _ := cmd.Flags().GetBool("follow")
 		if follow {
-			_ = task.TailLog(t.LogFile, true)
+			_ = task.TailLog(t.LogFile, true, true)
 			exitCode, err := runner.WaitForContainer(t.ContainerID)
 			if err != nil {
 				return err
@@ -331,12 +331,14 @@ var taskLogCmd = &cobra.Command{
 			return fmt.Errorf("task %d has no log file", id)
 		}
 		follow, _ := cmd.Flags().GetBool("follow")
+		raw, _ := cmd.Flags().GetBool("raw")
+		format := !raw
 		if !follow {
-			return task.TailLog(t.LogFile, false)
+			return task.TailLog(t.LogFile, false, format)
 		}
 
 		// Follow mode: stream logs, then block until container exits
-		if err := task.TailLog(t.LogFile, true); err != nil {
+		if err := task.TailLog(t.LogFile, true, format); err != nil {
 			// tail -f exits when the log stream ends (container stops) — not an error
 		}
 
@@ -478,6 +480,7 @@ func init() {
 	taskListCmd.Flags().String("domain", "", "Filter by domain")
 	taskListCmd.Flags().String("status", "", "Filter by status (open, running, done)")
 	taskLogCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	taskLogCmd.Flags().Bool("raw", false, "Show raw NDJSON instead of formatted output")
 
 	taskCmd.AddCommand(taskAddCmd)
 	taskCmd.AddCommand(taskRunCmd)

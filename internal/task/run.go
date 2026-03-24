@@ -73,7 +73,7 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	}
 
 	containerArgs := []string{
-		"run", "-d", "--rm",
+		"run", "-d", "-t", "--rm",
 		"--name", fmt.Sprintf("myhome-task-%d", t.ID),
 	}
 
@@ -437,7 +437,8 @@ func resolveMounts(mounts []string, homeDir string) []string {
 	return flags
 }
 
-// startLogStream pipes container logs to a file in the background.
+// startLogStream captures raw container logs to a file in the background.
+// Logs are stored as raw NDJSON — formatting happens at read time (task log command).
 func (r *Runner) startLogStream(runtime, containerID, logFile string) error {
 	f, err := os.Create(logFile)
 	if err != nil {
@@ -452,7 +453,6 @@ func (r *Runner) startLogStream(runtime, containerID, logFile string) error {
 		return fmt.Errorf("starting log stream: %w", err)
 	}
 
-	// Let the goroutine handle cleanup when the process exits
 	go func() {
 		cmd.Wait()
 		f.Close()
