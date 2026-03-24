@@ -5,6 +5,62 @@
 A Go CLI tool that manages a git-tracked home folder across multiple machines and environments.
 See `docs/init.md` for full scope and requirements, `docs/implementation-plan.md` for the build plan.
 
+## System Architecture: myhome + deskd
+
+myhome is the **workspace manager** — it handles machine setup, repos, tools, containers, auth.
+Agent orchestration is handled by a separate Rust project: **[deskd](https://github.com/kira-autonoma/deskd)**.
+
+```
+myhome (Go) — workspace                deskd (Rust) — agent runtime
+├── repos, tools, packages             ├── agent lifecycle (create/send/list/rm)
+├── containers (build, Dockerfile)      ├── prompt routing (promptlint)
+├── auth profiles, SSH, git identity    ├── context pool + forks + queues
+├── remote VPS management               ├── cost tracking + budgets
+├── myhome init --env work              ├── task API (HTTP)
+└── calls deskd for agent ops          └── session resume, stream-json parsing
+```
+
+### Data Access Model
+
+Each agent has a **Desk** (scoped data access):
+- **Physical data**: filesystem mounts, API tokens, credentials — ONLY own desk
+- **Shared data**: `/shared/` — all agents read, only owner writes
+- **Context**: own context RW, other agents' context via publish/subscribe/query
+- **Credentials**: NEVER shared between agents
+
+```
+agents:
+  dev:     desk=~/work/   creds=GitHub,GitLab  tools=Claude,MCP,archlint
+  school:  desk=Gmail     creds=Google OAuth    tools=email,Telegram
+  analyst: desk=web       creds=—               tools=search,Playwright
+```
+
+Context sharing between agents uses event queues:
+- Agent publishes discoveries (visibility: all/specific/none)
+- Other agents subscribe to event types (schedule, warnings, decisions)
+- Queries: agent can request context from another, owner decides to share or deny
+
+### Related Projects
+
+| Project | Language | Role |
+|---------|----------|------|
+| [myhome](https://github.com/kgatilin/myhome) | Go | Workspace manager |
+| [deskd](https://github.com/kira-autonoma/deskd) | Rust | Agent orchestration runtime |
+| [promptlint](https://github.com/mikeshogin/promptlint) | Go | Prompt complexity analysis + routing |
+| [archlint](https://github.com/mshogin/archlint) | Go | Architecture quality validation |
+
+### Key Issues Tracking Agent Architecture
+
+- [#44](https://github.com/kgatilin/myhome/issues/44) — Process-mode sub-agents (PR #45)
+- [#46](https://github.com/kgatilin/myhome/issues/46) — --max-turns + cost tracking (PR #47)
+- [#48](https://github.com/kgatilin/myhome/issues/48) — Hook/Plugin API (pre-route, post-validate)
+- [#49](https://github.com/kgatilin/myhome/issues/49) — Prompt routing via promptlint
+- [#50](https://github.com/kgatilin/myhome/issues/50) — Quality gate stage in workflows
+- [#51](https://github.com/kgatilin/myhome/issues/51) — Cost tracking (costlint)
+- [#52](https://github.com/kgatilin/myhome/issues/52) — Task creation HTTP API
+- [#53](https://github.com/kgatilin/myhome/issues/53) — Context management + forks + queues
+- [#55](https://github.com/kgatilin/myhome/issues/55) — TON Jetton tokens for agent economy
+
 ## Implementation
 
 Follow `docs/implementation-plan.md` strictly — implement iteration by iteration, mark tasks as done.
