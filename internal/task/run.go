@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/kgatilin/myhome/internal/config"
+	"github.com/kgatilin/myhome/internal/vault"
 )
 
 // ExecFunc creates an *exec.Cmd for the given command and arguments.
@@ -35,12 +36,13 @@ func NewRunner(store *Store, execFn ExecFunc, runtime string) *Runner {
 // RunOpts configures how to launch a task's container.
 type RunOpts struct {
 	ContainerName   string
-	ContainerConfig config.Container // container definition from myhome.yml
+	ContainerConfig config.Container     // container definition from myhome.yml
 	AuthProfile     string
 	ClaudeConfig    *config.ClaudeConfig // Claude auth profiles config
 	ProjectDir      string
-	HomeDir         string // user home dir for mount resolution
-	Notify          bool   // send desktop notification on completion
+	HomeDir         string             // user home dir for mount resolution
+	Notify          bool               // send desktop notification on completion
+	Vault           *vault.KDBXVault   // unlocked vault for resolving vault:// references (optional)
 }
 
 // RunTask creates a worktree (via Worktrunk or git), launches a container with Claude,
@@ -85,39 +87,13 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		)
 	}
 
-	// Mount the full project dir so git worktree pointers resolve inside the container.
-	// Git worktree .git files contain absolute host paths that don't exist in the container.
-	// We create temp copies with paths rewritten to /project and mount them over the originals.
-	containerWorkdir := "/project/.worktrees/" + sanitizedBranch
+	// Mount the project dir at the same absolute path inside the container.
+	// This ensures git worktree pointer files (which use absolute host paths)
+	// resolve correctly without any path rewriting.
 	containerArgs = append(containerArgs,
-		"-v", opts.ProjectDir+":/project",
-		"-w", containerWorkdir,
+		"-v", opts.ProjectDir+":"+opts.ProjectDir,
+		"-w", worktreePath,
 	)
-
-	// Create temp .git pointer file with container-relative path
-	wtGitFile := filepath.Join(worktreePath, ".git")
-	if data, err := os.ReadFile(wtGitFile); err == nil {
-		fixed := strings.ReplaceAll(string(data), opts.ProjectDir, "/project")
-		tmpGitFile := filepath.Join(os.TempDir(), fmt.Sprintf("myhome-task-%d-dotgit", t.ID))
-		if err := os.WriteFile(tmpGitFile, []byte(fixed), 0o644); err == nil {
-			containerArgs = append(containerArgs,
-				"-v", tmpGitFile+":"+containerWorkdir+"/.git:ro",
-			)
-		}
-	}
-
-	// Create temp gitdir reverse pointer with container-relative path
-	wtName := filepath.Base(worktreePath)
-	gitdirFile := filepath.Join(opts.ProjectDir, ".git", "worktrees", wtName, "gitdir")
-	if data, err := os.ReadFile(gitdirFile); err == nil {
-		fixed := strings.ReplaceAll(string(data), opts.ProjectDir, "/project")
-		tmpGitdirFile := filepath.Join(os.TempDir(), fmt.Sprintf("myhome-task-%d-gitdir", t.ID))
-		if err := os.WriteFile(tmpGitdirFile, []byte(fixed), 0o644); err == nil {
-			containerArgs = append(containerArgs,
-				"-v", tmpGitdirFile+":/project/.git/worktrees/"+wtName+"/gitdir:ro",
-			)
-		}
-	}
 
 	// Resolve container home dir (default /home/node)
 	containerHome := opts.ContainerConfig.HomeDir
@@ -160,9 +136,17 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 		containerArgs = append(containerArgs, "-v", v)
 	}
 
-	// Environment variables from container config
+	// Environment variables from container config.
+	// Values wrapped in $(...) are evaluated as shell commands on the host.
+	// Values with vault:// prefix are resolved from the unlocked vault.
 	for k, v := range opts.ContainerConfig.Env {
-		containerArgs = append(containerArgs, "-e", k+"="+v)
+		resolved, err := resolveEnvValueWithVault(v, r.execFn, opts.Vault)
+		if err != nil {
+			return fmt.Errorf("resolving env %s: %w", k, err)
+		}
+		if resolved != "" {
+			containerArgs = append(containerArgs, "-e", k+"="+resolved)
+		}
 	}
 
 	// Image
@@ -394,6 +378,35 @@ func expandHome(path, homeDir string) string {
 		return homeDir + path[1:]
 	}
 	return path
+}
+
+// resolveEnvValueWithVault resolves an env value, supporting vault:// references,
+// $(...) shell evaluation, and plain strings.
+func resolveEnvValueWithVault(val string, execFn ExecFunc, v *vault.KDBXVault) (string, error) {
+	if strings.HasPrefix(val, "vault://") {
+		if v == nil {
+			return "", fmt.Errorf("vault:// reference %q but no vault is unlocked", val)
+		}
+		return vault.ResolveVaultRef(val, v)
+	}
+	return resolveEnvValue(val, execFn), nil
+}
+
+// resolveEnvValue evaluates a container env value. If the value is wrapped in $(...),
+// it is executed as a shell command on the host and the stdout is used as the value.
+// If the command fails, an empty string is returned (the env var is skipped).
+func resolveEnvValue(val string, execFn ExecFunc) string {
+	if strings.HasPrefix(val, "$(") && strings.HasSuffix(val, ")") {
+		shellCmd := val[2 : len(val)-1]
+		cmd := execFn("sh", "-c", shellCmd)
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		if err := cmd.Run(); err != nil {
+			return ""
+		}
+		return strings.TrimSpace(stdout.String())
+	}
+	return val
 }
 
 // resolveMounts expands mount specs (tilde, :ro suffix) for container -v flags.

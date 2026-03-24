@@ -144,11 +144,94 @@ var vaultSSHAgentCmd = &cobra.Command{
 	},
 }
 
+var vaultGetCmd = &cobra.Command{
+	Use:   "get <entry>",
+	Short: "Read a secret from the vault",
+	Long:  "Reads a secret value from the .kdbx vault using native Go decryption (no keepassxc-cli needed).",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		entryName := args[0]
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+
+		dbPath := vault.DefaultVaultPath(homeDir)
+		keyFile := vault.DefaultKeyFile(homeDir)
+
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			return fmt.Errorf("vault not found at %s", dbPath)
+		}
+
+		password, err := promptPassword("Enter vault master password: ")
+		if err != nil {
+			return err
+		}
+
+		v, err := vault.OpenKDBX(dbPath, keyFile, password)
+		if err != nil {
+			return err
+		}
+
+		field, _ := cmd.Flags().GetString("field")
+		var value string
+		if field != "" {
+			value, err = v.GetField(entryName, field)
+		} else {
+			value, err = v.Get(entryName)
+		}
+		if err != nil {
+			return err
+		}
+
+		fmt.Print(value)
+		return nil
+	},
+}
+
+var vaultListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List vault entries",
+	Long:  "Lists all entries in the .kdbx vault using native Go decryption.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+
+		dbPath := vault.DefaultVaultPath(homeDir)
+		keyFile := vault.DefaultKeyFile(homeDir)
+
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			return fmt.Errorf("vault not found at %s", dbPath)
+		}
+
+		password, err := promptPassword("Enter vault master password: ")
+		if err != nil {
+			return err
+		}
+
+		v, err := vault.OpenKDBX(dbPath, keyFile, password)
+		if err != nil {
+			return err
+		}
+
+		for _, title := range v.List() {
+			fmt.Println(title)
+		}
+		return nil
+	},
+}
+
 func init() {
+	vaultGetCmd.Flags().String("field", "", "Entry field to read (default: Password)")
+
 	vaultCmd.AddCommand(vaultInitCmd)
 	vaultCmd.AddCommand(vaultStatusCmd)
 	vaultCmd.AddCommand(vaultSSHAddCmd)
 	vaultCmd.AddCommand(vaultSSHAgentCmd)
+	vaultCmd.AddCommand(vaultGetCmd)
+	vaultCmd.AddCommand(vaultListCmd)
 }
 
 // promptPassword reads a line from stdin. In a real implementation this would

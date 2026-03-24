@@ -16,6 +16,7 @@ import (
 	"github.com/kgatilin/myhome/internal/container"
 	"github.com/kgatilin/myhome/internal/remote"
 	"github.com/kgatilin/myhome/internal/task"
+	"github.com/kgatilin/myhome/internal/vault"
 )
 
 var taskCmd = &cobra.Command{
@@ -183,11 +184,13 @@ var taskRunCmd = &cobra.Command{
 		// Resolve repo path and container from config
 		var projectDir string
 		var repoContainer string
-		for _, r := range cfg.Repos {
+		var repoConfig *config.Repo
+		for i, r := range cfg.Repos {
 			base := filepath.Base(r.Path)
 			if base == t.Repo || r.Path == t.Repo {
 				projectDir = filepath.Join(homeDir, r.Path)
 				repoContainer = r.Container
+				repoConfig = &cfg.Repos[i]
 				break
 			}
 			// Fallback: check if repo matches any path segment (e.g. "uagent" matches "work/uagent/code")
@@ -195,6 +198,7 @@ var taskRunCmd = &cobra.Command{
 				if seg == t.Repo {
 					projectDir = filepath.Join(homeDir, r.Path)
 					repoContainer = r.Container
+					repoConfig = &cfg.Repos[i]
 					break
 				}
 			}
@@ -224,6 +228,24 @@ var taskRunCmd = &cobra.Command{
 			notifyEnabled = *cfg.Tasks.Notifications.Enabled
 		}
 
+		// Enrich prompt: run pre_run hooks and append task_suffix
+		t.Description = task.EnrichPrompt(t.Description, repoConfig, cfg.Tasks.TaskSuffix, exec.Command)
+
+		// Open vault if any env vars use vault:// references
+		var kdbxVault *vault.KDBXVault
+		if hasVaultRefs(ctrConfig.Env) {
+			dbPath := vault.DefaultVaultPath(homeDir)
+			keyFile := vault.DefaultKeyFile(homeDir)
+			password, promptErr := promptPassword("Enter vault master password: ")
+			if promptErr != nil {
+				return promptErr
+			}
+			kdbxVault, err = vault.OpenKDBX(dbPath, keyFile, password)
+			if err != nil {
+				return fmt.Errorf("open vault: %w", err)
+			}
+		}
+
 		runner := task.NewRunner(store, exec.Command, runtime)
 		if err := runner.RunTask(t, task.RunOpts{
 			ContainerName:   containerName,
@@ -233,6 +255,7 @@ var taskRunCmd = &cobra.Command{
 			ProjectDir:      projectDir,
 			HomeDir:         homeDir,
 			Notify:          notifyEnabled,
+			Vault:           kdbxVault,
 		}); err != nil {
 			return err
 		}
@@ -471,4 +494,14 @@ func defaultTaskStore() (*task.Store, error) {
 		return nil, err
 	}
 	return task.NewStore(filepath.Join(homeDir, "tasks"))
+}
+
+// hasVaultRefs returns true if any env values use vault:// references.
+func hasVaultRefs(env map[string]string) bool {
+	for _, v := range env {
+		if strings.HasPrefix(v, "vault://") {
+			return true
+		}
+	}
+	return false
 }
