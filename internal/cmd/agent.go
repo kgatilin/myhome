@@ -177,7 +177,8 @@ var agentLogsCmd = &cobra.Command{
 			return fmt.Errorf("agent %q has no log file", name)
 		}
 		follow, _ := cmd.Flags().GetBool("follow")
-		return task.TailLog(state.LogFile, follow)
+		raw, _ := cmd.Flags().GetBool("raw")
+		return task.TailLog(state.LogFile, follow, !raw)
 	},
 }
 
@@ -266,6 +267,7 @@ var agentRmCmd = &cobra.Command{
 
 func init() {
 	agentLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	agentLogsCmd.Flags().Bool("raw", false, "Show raw NDJSON instead of formatted output")
 
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentListCmd)
