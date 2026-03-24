@@ -31,6 +31,9 @@ Follow `docs/implementation-plan.md` strictly — implement iteration by iterati
 - `internal/vault/` — KeePassXC vault management (create vault, import SSH keys, per-agent vaults)
 - `internal/remote/` — Remote SSH + tmux session management
 - `internal/schedule/` — Cron-based recurring tasks with template variables
+- `internal/agent/` — Agent lifecycle management (create, start, stop, restart, state machine)
+- `internal/daemon/` — Long-running supervisor process, gRPC API on unix socket, message routing
+- `internal/adapter/` — InputSource interface for external event sources (CLI, webhooks, cron)
 
 ### Code Style
 
@@ -77,6 +80,13 @@ Key metrics: afferent/efferent coupling, instability, abstractness, SRP/DIP/ISP 
 god classes, hub nodes, feature envy, shotgun surgery, cyclic dependencies.
 
 Run `archlint collect . -l go -o architecture.yaml` to generate a full architecture snapshot.
+
+### Architecture Validation
+
+- Run `archlint check .` before committing to check for violations
+- Run `archlint metrics .` for coupling analysis
+- Key targets: no circular dependencies, minimize concrete config dependencies, keep packages cohesive
+- archlint MCP server available in containers via `archlint serve`
 
 ### Container Config Constraints
 
