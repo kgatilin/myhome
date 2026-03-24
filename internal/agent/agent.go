@@ -25,6 +25,14 @@ const (
 	StatusFailed   AgentStatus = "failed"
 )
 
+// AgentMode represents how an agent runs: in a container or as a local process.
+type AgentMode string
+
+const (
+	ModeContainer AgentMode = "container"
+	ModeProcess   AgentMode = "process"
+)
+
 // AgentRuntime holds runtime/session state for an agent.
 type AgentRuntime struct {
 	GRPCPort     int     `yaml:"grpc_port,omitempty"`
@@ -39,11 +47,13 @@ type AgentRuntime struct {
 // State holds the runtime state of an agent, persisted to disk.
 type State struct {
 	Name         string      `yaml:"name"`
+	Mode         AgentMode   `yaml:"mode,omitempty"`
 	ContainerID  string      `yaml:"container_id,omitempty"`
+	PID          int         `yaml:"pid,omitempty"`
 	SessionID    string      `yaml:"session_id,omitempty"`
 	Status       AgentStatus `yaml:"status"`
 	CreatedAt    time.Time   `yaml:"created_at"`
-	Container    string      `yaml:"container"` // container config name from myhome.yml
+	Container    string      `yaml:"container,omitempty"` // container config name from myhome.yml
 	AgentRuntime `yaml:",inline"`
 }
 
@@ -54,6 +64,7 @@ type ExecFunc func(name string, args ...string) *exec.Cmd
 type Manager struct {
 	store *Store
 	ctr   containerOps
+	proc  processOps
 	Vault vault.Reader // optional: for resolving SSH keys and vault:// secrets
 }
 
@@ -66,11 +77,39 @@ func NewManager(store *Store, execFn ExecFunc, runtime, homeDir string) *Manager
 			runtime: runtime,
 			homeDir: homeDir,
 		},
+		proc: processOps{
+			execFn:  execFn,
+			homeDir: homeDir,
+		},
 	}
 }
 
-// Create starts a new agent container from config and persists its state.
-func (m *Manager) Create(name string, agentCfg config.AgentConfig, cfg *config.Config) error {
+// CreateOpts holds options for agent creation that aren't part of config.
+type CreateOpts struct {
+	Mode    AgentMode
+	Prompt  string // initial prompt for process-mode agents
+	WorkDir string // override work dir (for process mode without mounts config)
+}
+
+// Create starts a new agent from config and persists its state.
+// For container mode, it starts a Docker container. For process mode, it spawns claude as a background process.
+func (m *Manager) Create(name string, agentCfg config.AgentConfig, cfg *config.Config, opts ...CreateOpts) error {
+	var opt CreateOpts
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	if opt.Mode == "" {
+		opt.Mode = ModeContainer
+	}
+
+	if opt.Mode == ModeProcess {
+		return m.createProcess(name, agentCfg, opt)
+	}
+	return m.createContainer(name, agentCfg, cfg)
+}
+
+// createContainer starts a new agent in a Docker container.
+func (m *Manager) createContainer(name string, agentCfg config.AgentConfig, cfg *config.Config) error {
 	if existing, err := m.store.Load(name); err == nil {
 		if existing.Status == StatusRunning {
 			return fmt.Errorf("agent %q is already running", name)
@@ -110,6 +149,7 @@ func (m *Manager) Create(name string, agentCfg config.AgentConfig, cfg *config.C
 
 	state := &State{
 		Name:      name,
+		Mode:      ModeContainer,
 		Status:    StatusCreating,
 		CreatedAt: time.Now(),
 		Container: agentCfg.Container,
@@ -150,7 +190,65 @@ func (m *Manager) Create(name string, agentCfg config.AgentConfig, cfg *config.C
 	return nil
 }
 
-// Stop gracefully stops an agent's container.
+// createProcess starts a new agent as a local claude process.
+func (m *Manager) createProcess(name string, agentCfg config.AgentConfig, opt CreateOpts) error {
+	if existing, err := m.store.Load(name); err == nil {
+		if existing.Status == StatusRunning {
+			return fmt.Errorf("agent %q is already running", name)
+		}
+		m.store.Remove(name)
+	}
+
+	logFile := filepath.Join(m.store.LogDir(), name+".log")
+	workDir := opt.WorkDir
+	if workDir == "" && len(agentCfg.Mounts) > 0 {
+		// Use first mount's host path as work dir
+		m0 := strings.TrimSuffix(agentCfg.Mounts[0], ":ro")
+		parts := strings.SplitN(m0, ":", 2)
+		workDir = expandHome(parts[0], m.proc.homeDir)
+		if !filepath.IsAbs(workDir) {
+			workDir = filepath.Join(m.proc.homeDir, workDir)
+		}
+	}
+
+	prompt := opt.Prompt
+	if prompt == "" {
+		prompt = "You are agent " + name + ". Wait for instructions."
+	}
+
+	state := &State{
+		Name:      name,
+		Mode:      ModeProcess,
+		Status:    StatusCreating,
+		CreatedAt: time.Now(),
+		AgentRuntime: AgentRuntime{
+			LogFile:      logFile,
+			Model:        agentCfg.Model,
+			SystemPrompt: agentCfg.SystemPrompt,
+			WorkDir:      workDir,
+		},
+	}
+	if err := m.store.Save(state); err != nil {
+		return fmt.Errorf("saving initial state: %w", err)
+	}
+
+	pid, err := m.proc.startProcess(prompt, logFile, workDir, agentCfg.Model, agentCfg.SystemPrompt, agentCfg.Env)
+	if err != nil {
+		state.Status = StatusFailed
+		m.store.Save(state)
+		return fmt.Errorf("starting agent process: %w", err)
+	}
+
+	state.PID = pid
+	state.Status = StatusRunning
+	if err := m.store.Save(state); err != nil {
+		return fmt.Errorf("saving running state: %w", err)
+	}
+
+	return nil
+}
+
+// Stop gracefully stops an agent.
 func (m *Manager) Stop(name string) error {
 	state, err := m.store.Load(name)
 	if err != nil {
@@ -159,14 +257,25 @@ func (m *Manager) Stop(name string) error {
 	if state.Status != StatusRunning {
 		return fmt.Errorf("agent %q is not running (status: %s)", name, state.Status)
 	}
-	if state.ContainerID == "" {
-		return fmt.Errorf("agent %q has no container ID", name)
-	}
 
-	if err := m.ctr.stopContainer(state.ContainerID); err != nil {
-		state.Status = StatusStopped
-		m.store.Save(state)
-		return fmt.Errorf("stopping agent container: %w", err)
+	if state.Mode == ModeProcess {
+		if state.PID <= 0 {
+			return fmt.Errorf("agent %q has no PID", name)
+		}
+		if err := m.proc.killProcess(state.PID); err != nil {
+			state.Status = StatusStopped
+			m.store.Save(state)
+			return fmt.Errorf("stopping agent process: %w", err)
+		}
+	} else {
+		if state.ContainerID == "" {
+			return fmt.Errorf("agent %q has no container ID", name)
+		}
+		if err := m.ctr.stopContainer(state.ContainerID); err != nil {
+			state.Status = StatusStopped
+			m.store.Save(state)
+			return fmt.Errorf("stopping agent container: %w", err)
+		}
 	}
 
 	state.Status = StatusStopped
@@ -174,21 +283,33 @@ func (m *Manager) Stop(name string) error {
 }
 
 // Restart stops and starts an agent, preserving session for continuity.
-func (m *Manager) Restart(name string, agentCfg config.AgentConfig, cfg *config.Config) error {
+func (m *Manager) Restart(name string, agentCfg config.AgentConfig, cfg *config.Config, opts ...CreateOpts) error {
 	state, err := m.store.Load(name)
 	if err != nil {
 		return err
 	}
 
-	if state.Status == StatusRunning && state.ContainerID != "" {
-		m.ctr.stopContainer(state.ContainerID)
-		m.ctr.rmContainer(state.ContainerID)
+	if state.Status == StatusRunning {
+		if state.Mode == ModeProcess {
+			if state.PID > 0 {
+				m.proc.killProcess(state.PID)
+			}
+		} else if state.ContainerID != "" {
+			m.ctr.stopContainer(state.ContainerID)
+			m.ctr.rmContainer(state.ContainerID)
+		}
 	}
 
 	sessionID := state.SessionID
+	mode := state.Mode
 	m.store.Remove(name)
 
-	if err := m.Create(name, agentCfg, cfg); err != nil {
+	// Preserve mode from previous state if not specified in opts
+	if len(opts) == 0 && mode == ModeProcess {
+		opts = []CreateOpts{{Mode: ModeProcess}}
+	}
+
+	if err := m.Create(name, agentCfg, cfg, opts...); err != nil {
 		return err
 	}
 
@@ -208,9 +329,15 @@ func (m *Manager) Remove(name string) error {
 		return err
 	}
 
-	if state.Status == StatusRunning && state.ContainerID != "" {
-		m.ctr.stopContainer(state.ContainerID)
-		m.ctr.rmContainer(state.ContainerID)
+	if state.Status == StatusRunning {
+		if state.Mode == ModeProcess {
+			if state.PID > 0 {
+				m.proc.killProcess(state.PID)
+			}
+		} else if state.ContainerID != "" {
+			m.ctr.stopContainer(state.ContainerID)
+			m.ctr.rmContainer(state.ContainerID)
+		}
 	}
 
 	return m.store.Remove(name)
@@ -226,32 +353,53 @@ func (m *Manager) Send(name, message string) (string, error) {
 		return "", fmt.Errorf("agent %q is not running (status: %s)", name, state.Status)
 	}
 
-	claudeArgs := []string{"exec"}
-	if state.WorkDir != "" {
-		claudeArgs = append(claudeArgs, "-w", state.WorkDir)
-	}
-	claudeArgs = append(claudeArgs, state.ContainerID,
-		"claude", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose")
-	if state.Model != "" {
-		claudeArgs = append(claudeArgs, "--model", state.Model)
-	}
-	if state.SessionID != "" {
-		claudeArgs = append(claudeArgs, "--resume", state.SessionID)
-	} else if state.SystemPrompt != "" {
-		claudeArgs = append(claudeArgs, "--system-prompt", state.SystemPrompt)
-	}
-	claudeArgs = append(claudeArgs, "-p", message)
+	var rawOutput string
 
-	cmd := m.ctr.execFn(m.ctr.runtime, claudeArgs...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("sending message to agent %q: %s: %w", name, strings.TrimSpace(stderr.String()), err)
+	if state.Mode == ModeProcess {
+		out, err := m.proc.sendMessage(message, state.WorkDir, state.Model, state.SessionID, state.SystemPrompt, nil)
+		if err != nil {
+			return "", fmt.Errorf("sending message to agent %q: %w", name, err)
+		}
+		rawOutput = out
+	} else {
+		claudeArgs := []string{"exec"}
+		if state.WorkDir != "" {
+			claudeArgs = append(claudeArgs, "-w", state.WorkDir)
+		}
+		claudeArgs = append(claudeArgs, state.ContainerID,
+			"claude", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose")
+		if state.Model != "" {
+			claudeArgs = append(claudeArgs, "--model", state.Model)
+		}
+		if state.SessionID != "" {
+			claudeArgs = append(claudeArgs, "--resume", state.SessionID)
+		} else if state.SystemPrompt != "" {
+			claudeArgs = append(claudeArgs, "--system-prompt", state.SystemPrompt)
+		}
+		claudeArgs = append(claudeArgs, "-p", message)
+
+		cmd := m.ctr.execFn(m.ctr.runtime, claudeArgs...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("sending message to agent %q: %s: %w", name, strings.TrimSpace(stderr.String()), err)
+		}
+		rawOutput = stdout.String()
 	}
 
+	resultText := parseStreamJSON(rawOutput, state)
+
+	state.NumTurns++
+	m.store.Save(state)
+
+	return resultText, nil
+}
+
+// parseStreamJSON extracts the result text from stream-json output and captures session ID.
+func parseStreamJSON(output string, state *State) string {
 	var resultText string
-	for _, line := range strings.Split(stdout.String(), "\n") {
+	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -272,19 +420,35 @@ func (m *Manager) Send(name, message string) (string, error) {
 			}
 		}
 	}
-
-	state.NumTurns++
-	m.store.Save(state)
-
-	return resultText, nil
+	return resultText
 }
 
-// RefreshStatus syncs persisted state with actual container status.
+// RefreshStatus syncs persisted state with actual runtime status.
 func (m *Manager) RefreshStatus(name string) (*State, error) {
 	state, err := m.store.Load(name)
 	if err != nil {
 		return nil, err
 	}
+
+	if state.Mode == ModeProcess {
+		if state.PID <= 0 {
+			return state, nil
+		}
+		if m.proc.isProcessRunning(state.PID) {
+			if state.Status != StatusRunning {
+				state.Status = StatusRunning
+				m.store.Save(state)
+			}
+		} else {
+			if state.Status == StatusRunning {
+				state.Status = StatusStopped
+				m.store.Save(state)
+			}
+		}
+		return state, nil
+	}
+
+	// Container mode
 	if state.ContainerID == "" {
 		return state, nil
 	}
