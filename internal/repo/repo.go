@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,7 +34,9 @@ func List(env *config.ResolvedEnv, homeDir string) ([]Status, error) {
 }
 
 // Sync clones any missing repos for the given environment.
+// It continues on clone failures and returns all errors joined.
 func Sync(env *config.ResolvedEnv, homeDir string) error {
+	var errs []error
 	for _, r := range env.Repos {
 		absPath := filepath.Join(homeDir, r.Path)
 		if isGitRepo(absPath) {
@@ -41,10 +44,11 @@ func Sync(env *config.ResolvedEnv, homeDir string) error {
 		}
 		fmt.Printf("Cloning %s → %s\n", r.URL, r.Path)
 		if err := gitClone(r.URL, absPath); err != nil {
-			return fmt.Errorf("clone %s: %w", r.Path, err)
+			fmt.Printf("  ✗ %s: %v\n", r.Path, err)
+			errs = append(errs, fmt.Errorf("clone %s: %w", r.Path, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // Add adds a repo to the config. If url is empty, it detects from the existing git remote.
