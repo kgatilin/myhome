@@ -32,27 +32,61 @@ var agentCreateCmd = &cobra.Command{
 	ValidArgsFunction: agentNameCompletionFunc,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+		modeStr, _ := cmd.Flags().GetString("mode")
+		prompt, _ := cmd.Flags().GetString("prompt")
+		workDir, _ := cmd.Flags().GetString("work-dir")
 
-		// Try daemon first
-		homeDir, _ := os.UserHomeDir()
-		socketPath := daemon.SocketPath(homeDir)
-		if daemon.IsRunning(socketPath) {
-			resp, err := daemon.Call(socketPath, "create", map[string]string{"name": name})
-			if err != nil {
-				return err
-			}
-			if resp.Error != "" {
-				return fmt.Errorf("%s", resp.Error)
-			}
-			fmt.Printf("Agent %s created (via daemon)\n", name)
-			return nil
+		mode := agent.AgentMode(modeStr)
+		if mode != agent.ModeContainer && mode != agent.ModeProcess {
+			return fmt.Errorf("invalid mode %q: must be 'container' or 'process'", modeStr)
 		}
 
-		// Direct mode (no daemon)
+		// Try daemon first (container mode only)
+		if mode == agent.ModeContainer {
+			homeDir, _ := os.UserHomeDir()
+			socketPath := daemon.SocketPath(homeDir)
+			if daemon.IsRunning(socketPath) {
+				resp, err := daemon.Call(socketPath, "create", map[string]string{"name": name})
+				if err != nil {
+					return err
+				}
+				if resp.Error != "" {
+					return fmt.Errorf("%s", resp.Error)
+				}
+				fmt.Printf("Agent %s created (via daemon)\n", name)
+				return nil
+			}
+		}
+
+		// Direct mode
 		cfg, agentCfg, err := loadAgentConfig(name)
 		if err != nil {
 			return err
 		}
+
+		opts := agent.CreateOpts{
+			Mode:    mode,
+			Prompt:  prompt,
+			WorkDir: workDir,
+		}
+
+		if mode == agent.ModeProcess {
+			// Process mode doesn't need container runtime
+			store, err := defaultAgentStore()
+			if err != nil {
+				return err
+			}
+			homeDir, _ := os.UserHomeDir()
+			mgr := agent.NewManager(store, exec.Command, "", homeDir)
+			if err := mgr.Create(name, agentCfg, cfg, opts); err != nil {
+				return err
+			}
+			state, _ := store.Load(name)
+			fmt.Printf("Agent %s created (process: PID %d)\n", name, state.PID)
+			return nil
+		}
+
+		// Container mode
 		mgr, err := newAgentManager(cfg)
 		if err != nil {
 			return err
@@ -60,7 +94,7 @@ var agentCreateCmd = &cobra.Command{
 		if err := openVaultIfNeeded(mgr, agentCfg); err != nil {
 			return err
 		}
-		if err := mgr.Create(name, agentCfg, cfg); err != nil {
+		if err := mgr.Create(name, agentCfg, cfg, opts); err != nil {
 			return err
 		}
 		store, _ := defaultAgentStore()
@@ -83,11 +117,6 @@ var agentListCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, _, _, err := loadContainerDeps()
-		if err != nil {
-			return err
-		}
-
 		states, err := store.List()
 		if err != nil {
 			return err
@@ -97,23 +126,33 @@ var agentListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Refresh status from container runtime
+		// Detect runtime for container agents (best-effort)
 		homeDir, _ := os.UserHomeDir()
-		runtime, _ := container.DetectRuntime(cfg.ContainerRuntime)
+		var runtime string
+		cfg, _, _, cfgErr := loadContainerDeps()
+		if cfgErr == nil {
+			runtime, _ = container.DetectRuntime(cfg.ContainerRuntime)
+		}
 		mgr := agent.NewManager(store, exec.Command, runtime, homeDir)
 
-		fmt.Printf("%-15s %-12s %-15s %-8s %s\n", "NAME", "STATUS", "CONTAINER", "TURNS", "CREATED")
+		fmt.Printf("%-15s %-10s %-12s %-15s %-8s %s\n", "NAME", "MODE", "STATUS", "ID", "TURNS", "CREATED")
 		for _, s := range states {
 			refreshed, _ := mgr.RefreshStatus(s.Name)
 			if refreshed != nil {
 				s = refreshed
 			}
-			cid := s.ContainerID
-			if len(cid) > 12 {
-				cid = cid[:12]
+			mode := string(s.Mode)
+			if mode == "" {
+				mode = "container"
 			}
-			fmt.Printf("%-15s %-12s %-15s %-8d %s\n",
-				s.Name, s.Status, cid, s.NumTurns, s.CreatedAt.Format("2006-01-02 15:04"))
+			id := s.ContainerID
+			if s.Mode == agent.ModeProcess {
+				id = fmt.Sprintf("PID %d", s.PID)
+			} else if len(id) > 12 {
+				id = id[:12]
+			}
+			fmt.Printf("%-15s %-10s %-12s %-15s %-8d %s\n",
+				s.Name, mode, s.Status, id, s.NumTurns, s.CreatedAt.Format("2006-01-02 15:04"))
 		}
 		return nil
 	},
@@ -148,11 +187,7 @@ var agentSendCmd = &cobra.Command{
 		}
 
 		// Direct mode
-		cfg, _, err := loadAgentConfig(name)
-		if err != nil {
-			return err
-		}
-		mgr, err := newAgentManager(cfg)
+		mgr, err := newAgentManagerForExisting(name)
 		if err != nil {
 			return err
 		}
@@ -211,11 +246,7 @@ var agentStopCmd = &cobra.Command{
 		}
 
 		// Direct mode
-		cfg, _, err := loadAgentConfig(name)
-		if err != nil {
-			return err
-		}
-		mgr, err := newAgentManager(cfg)
+		mgr, err := newAgentManagerForExisting(name)
 		if err != nil {
 			return err
 		}
@@ -258,11 +289,7 @@ var agentRmCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		cfg, _, err := loadAgentConfig(name)
-		if err != nil {
-			return err
-		}
-		mgr, err := newAgentManager(cfg)
+		mgr, err := newAgentManagerForExisting(name)
 		if err != nil {
 			return err
 		}
@@ -344,6 +371,10 @@ var agentChatCmd = &cobra.Command{
 }
 
 func init() {
+	agentCreateCmd.Flags().String("mode", "container", "Agent mode: 'container' or 'process'")
+	agentCreateCmd.Flags().String("prompt", "", "Initial prompt for process-mode agents")
+	agentCreateCmd.Flags().String("work-dir", "", "Override work directory (process mode)")
+
 	agentLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	agentLogsCmd.Flags().Bool("raw", false, "Show raw NDJSON instead of formatted output")
 
@@ -436,6 +467,36 @@ func openVaultIfNeeded(mgr *agent.Manager, agentCfg config.AgentConfig) error {
 
 	mgr.Vault = v
 	return nil
+}
+
+// newAgentManagerForExisting creates an agent.Manager appropriate for an already-created agent.
+// For process-mode agents, no container runtime is needed.
+func newAgentManagerForExisting(name string) (*agent.Manager, error) {
+	store, err := defaultAgentStore()
+	if err != nil {
+		return nil, err
+	}
+	state, err := store.Load(name)
+	if err != nil {
+		return nil, err
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	if state.Mode == agent.ModeProcess {
+		return agent.NewManager(store, exec.Command, "", homeDir), nil
+	}
+	// Container mode — need runtime
+	cfg, _, err := loadAgentConfig(name)
+	if err != nil {
+		return nil, err
+	}
+	runtime, err := container.DetectRuntime(cfg.ContainerRuntime)
+	if err != nil {
+		return nil, err
+	}
+	return agent.NewManager(store, exec.Command, runtime, homeDir), nil
 }
 
 // agentNameCompletionFunc provides shell completion for agent names.
