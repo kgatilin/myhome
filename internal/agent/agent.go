@@ -4,6 +4,7 @@ package agent
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/container"
+	"github.com/kgatilin/myhome/internal/vault"
 )
 
 // AgentStatus represents the lifecycle state of an agent.
@@ -48,6 +50,7 @@ type Manager struct {
 	execFn  ExecFunc
 	runtime string
 	homeDir string
+	Vault   *vault.KDBXVault // optional: for resolving SSH keys and vault:// secrets
 }
 
 // NewManager creates a Manager with the given dependencies.
@@ -81,7 +84,10 @@ func (m *Manager) Create(name string, agentCfg config.AgentConfig, cfg *config.C
 	containerName := fmt.Sprintf("myhome-agent-%s", name)
 	logFile := filepath.Join(m.store.LogDir(), name+".log")
 
-	args := m.buildContainerArgs(containerName, name, agentCfg, ctrCfg, cfg)
+	args, err := m.buildContainerArgs(containerName, name, agentCfg, ctrCfg, cfg)
+	if err != nil {
+		return fmt.Errorf("building container args: %w", err)
+	}
 
 	// Create initial state
 	state := &State{
@@ -283,7 +289,7 @@ func (m *Manager) RefreshStatus(name string) (*State, error) {
 }
 
 // buildContainerArgs constructs the docker run arguments for an agent container.
-func (m *Manager) buildContainerArgs(containerName, agentName string, agentCfg config.AgentConfig, ctrCfg config.Container, cfg *config.Config) []string {
+func (m *Manager) buildContainerArgs(containerName, agentName string, agentCfg config.AgentConfig, ctrCfg config.Container, cfg *config.Config) ([]string, error) {
 	args := []string{"run", "-d", "--name", containerName}
 
 	// Firewall
@@ -336,6 +342,28 @@ func (m *Manager) buildContainerArgs(containerName, agentName string, agentCfg c
 		"-e", "CLAUDE_CONFIG_DIR="+containerHome+"/.claude",
 	)
 
+	// SSH key injection: tmpfs mount + key as base64 env var (decoded in startup preamble)
+	var sshKeyB64 string
+	if agentCfg.Identity.SSH != "" {
+		keyData, err := m.extractSSHKey(agentCfg.Identity.SSH)
+		if err != nil {
+			return nil, fmt.Errorf("extracting SSH key %q: %w", agentCfg.Identity.SSH, err)
+		}
+		sshKeyB64 = base64.StdEncoding.EncodeToString(keyData)
+		args = append(args, "--tmpfs", "/run/agent-ssh:size=1m,mode=0700")
+		args = append(args, "-e", "_AGENT_SSH_KEY_B64="+sshKeyB64)
+		args = append(args, "-e", "GIT_SSH_COMMAND=ssh -i /run/agent-ssh/id_ed25519 -o StrictHostKeyChecking=no")
+	}
+
+	// Vault secrets injection: resolve vault:// refs to env vars
+	for _, ref := range agentCfg.Secrets.Vault {
+		envName, envVal, err := m.resolveSecretRef(ref)
+		if err != nil {
+			return nil, fmt.Errorf("resolving secret %q: %w", ref, err)
+		}
+		args = append(args, "-e", envName+"="+envVal)
+	}
+
 	// Container env vars
 	for k, v := range ctrCfg.Env {
 		resolved := resolveEnvValue(v, m.execFn)
@@ -373,15 +401,49 @@ func (m *Manager) buildContainerArgs(containerName, agentName string, agentCfg c
 		if prompt == "" {
 			prompt = fmt.Sprintf("You are the %s agent.", agentName)
 		}
-		var parts []string
-		for _, sc := range ctrCfg.StartupCommands {
-			parts = append(parts, renderStartupCommand(sc, prompt))
+
+		var scriptParts []string
+
+		// SSH key setup preamble: decode key from env to tmpfs, set permissions
+		if sshKeyB64 != "" {
+			scriptParts = append(scriptParts,
+				`echo "$_AGENT_SSH_KEY_B64" | base64 -d > /run/agent-ssh/id_ed25519 && chmod 600 /run/agent-ssh/id_ed25519`)
 		}
-		script := strings.Join(parts, " ; ")
+
+		for _, sc := range ctrCfg.StartupCommands {
+			scriptParts = append(scriptParts, renderStartupCommand(sc, prompt))
+		}
+		script := strings.Join(scriptParts, " ; ")
 		args = append(args, "/bin/bash", "-c", script)
 	}
 
-	return args
+	return args, nil
+}
+
+// extractSSHKey reads an SSH private key from the vault.
+// The key name maps to a vault entry "SSH Keys/<name>" with an attachment named <name>.
+func (m *Manager) extractSSHKey(keyName string) ([]byte, error) {
+	if m.Vault == nil {
+		return nil, fmt.Errorf("vault required for SSH key injection but not provided")
+	}
+	entryName := "SSH Keys/" + keyName
+	return m.Vault.GetAttachment(entryName, keyName)
+}
+
+// resolveSecretRef resolves a vault:// reference to an env var name and value.
+// "vault://github-pat-personal" → env name "GITHUB_PAT_PERSONAL", value from vault.
+func (m *Manager) resolveSecretRef(ref string) (string, string, error) {
+	if m.Vault == nil {
+		return "", "", fmt.Errorf("vault required for secret %q but not provided", ref)
+	}
+	val, err := vault.ResolveVaultRef(ref, m.Vault)
+	if err != nil {
+		return "", "", err
+	}
+	// Derive env var name: strip vault://, uppercase, replace - with _
+	name := strings.TrimPrefix(ref, "vault://")
+	name = strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	return name, val, nil
 }
 
 // renderStartupCommand replaces {{.Prompt}} with shell-quoted prompt.

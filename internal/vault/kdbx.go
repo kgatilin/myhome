@@ -156,6 +156,25 @@ func listGroupEntries(prefix string, group *gokeepasslib.Group) []string {
 	return titles
 }
 
+// GetAttachment returns the binary content of an attachment on a vault entry.
+// SSH keys imported via "vault ssh-add" are stored as attachments under "SSH Keys/<name>".
+func (v *KDBXVault) GetAttachment(entryName, attachmentName string) ([]byte, error) {
+	entry := v.findEntry(entryName)
+	if entry == nil {
+		return nil, fmt.Errorf("entry %q not found in vault", entryName)
+	}
+	for _, binRef := range entry.Binaries {
+		if binRef.Name == attachmentName {
+			bin := v.db.FindBinary(binRef.Value.ID)
+			if bin == nil {
+				return nil, fmt.Errorf("binary ref %d for attachment %q not found in vault", binRef.Value.ID, attachmentName)
+			}
+			return bin.GetContentBytes()
+		}
+	}
+	return nil, fmt.Errorf("attachment %q not found on entry %q", attachmentName, entryName)
+}
+
 // ResolveVaultRef resolves a "vault://<entry>" reference to its secret value.
 // Returns the original string unchanged if it doesn't have the vault:// prefix.
 func ResolveVaultRef(ref string, v *KDBXVault) (string, error) {

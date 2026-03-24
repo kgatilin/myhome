@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/kgatilin/myhome/internal/container"
 	"github.com/kgatilin/myhome/internal/daemon"
 	"github.com/kgatilin/myhome/internal/task"
+	"github.com/kgatilin/myhome/internal/vault"
 )
 
 var agentCmd = &cobra.Command{
@@ -52,6 +55,9 @@ var agentCreateCmd = &cobra.Command{
 		}
 		mgr, err := newAgentManager(cfg)
 		if err != nil {
+			return err
+		}
+		if err := openVaultIfNeeded(mgr, agentCfg); err != nil {
 			return err
 		}
 		if err := mgr.Create(name, agentCfg, cfg); err != nil {
@@ -235,6 +241,9 @@ var agentRestartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := openVaultIfNeeded(mgr, agentCfg); err != nil {
+			return err
+		}
 		if err := mgr.Restart(name, agentCfg, cfg); err != nil {
 			return err
 		}
@@ -265,6 +274,75 @@ var agentRmCmd = &cobra.Command{
 	},
 }
 
+var agentChatCmd = &cobra.Command{
+	Use:               "chat <name>",
+	Short:             "Interactive chat REPL with an agent",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: agentNameCompletionFunc,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+
+		homeDir, _ := os.UserHomeDir()
+		socketPath := daemon.SocketPath(homeDir)
+		useDaemon := daemon.IsRunning(socketPath)
+
+		var mgr *agent.Manager
+		if !useDaemon {
+			cfg, _, err := loadAgentConfig(name)
+			if err != nil {
+				return err
+			}
+			m, err := newAgentManager(cfg)
+			if err != nil {
+				return err
+			}
+			mgr = m
+		}
+
+		fmt.Printf("Chat with agent %s (type 'exit' or Ctrl-D to quit)\n", name)
+		scanner := bufio.NewScanner(os.Stdin)
+		for {
+			fmt.Print("> ")
+			if !scanner.Scan() {
+				fmt.Println()
+				return nil
+			}
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			if line == "exit" || line == "quit" {
+				return nil
+			}
+
+			var response string
+			if useDaemon {
+				resp, err := daemon.Call(socketPath, "send", map[string]string{
+					"name":    name,
+					"message": line,
+				})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					continue
+				}
+				if resp.Error != "" {
+					fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Error)
+					continue
+				}
+				json.Unmarshal(resp.Result, &response)
+			} else {
+				r, err := mgr.Send(name, line)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					continue
+				}
+				response = r
+			}
+			fmt.Println(response)
+		}
+	},
+}
+
 func init() {
 	agentLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	agentLogsCmd.Flags().Bool("raw", false, "Show raw NDJSON instead of formatted output")
@@ -272,6 +350,7 @@ func init() {
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentSendCmd)
+	agentCmd.AddCommand(agentChatCmd)
 	agentCmd.AddCommand(agentLogsCmd)
 	agentCmd.AddCommand(agentStopCmd)
 	agentCmd.AddCommand(agentRestartCmd)
@@ -323,6 +402,40 @@ func defaultAgentStore() (*agent.Store, error) {
 		return nil, err
 	}
 	return agent.NewStore(filepath.Join(homeDir, ".myhome", "agents"))
+}
+
+// openVaultIfNeeded opens the KeePassXC vault and sets it on the agent manager
+// if the agent config requires SSH key or vault:// secret injection.
+func openVaultIfNeeded(mgr *agent.Manager, agentCfg config.AgentConfig) error {
+	needsVault := agentCfg.Identity.SSH != "" || len(agentCfg.Secrets.Vault) > 0
+	if !needsVault {
+		return nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	dbPath := vault.DefaultVaultPath(homeDir)
+	keyFile := vault.DefaultKeyFile(homeDir)
+
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return fmt.Errorf("vault not found at %s (required for agent SSH/secrets)", dbPath)
+	}
+
+	password, err := promptPassword("Enter vault master password: ")
+	if err != nil {
+		return err
+	}
+
+	v, err := vault.OpenKDBX(dbPath, keyFile, password)
+	if err != nil {
+		return fmt.Errorf("opening vault: %w", err)
+	}
+
+	mgr.Vault = v
+	return nil
 }
 
 // agentNameCompletionFunc provides shell completion for agent names.
