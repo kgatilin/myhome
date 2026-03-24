@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kgatilin/myhome/internal/config"
+	"github.com/kgatilin/myhome/internal/pathutil"
 	"github.com/kgatilin/myhome/internal/remote"
 )
 
@@ -161,6 +162,7 @@ var remoteInitCmd = &cobra.Command{
 		}
 
 		vaultKey, _ := cmd.Flags().GetString("vault-key")
+		vaultKey = pathutil.ExpandTilde(vaultKey)
 
 		fmt.Printf("Bootstrapping %s (%s) with env %s...\n", hostName, remoteCfg.Host, remoteCfg.Env)
 
