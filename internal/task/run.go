@@ -43,6 +43,7 @@ type RunOpts struct {
 	HomeDir         string             // user home dir for mount resolution
 	Notify          bool               // send desktop notification on completion
 	Vault           *vault.KDBXVault   // unlocked vault for resolving vault:// references (optional)
+	SSHHosts        []string           // SSH hosts to populate known_hosts via ssh-keyscan
 }
 
 // RunTask creates a worktree (via Worktrunk or git), launches a container with Claude,
@@ -123,6 +124,16 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 			for k, v := range profile.Env {
 				containerArgs = append(containerArgs, "-e", k+"="+v)
 			}
+		}
+	}
+
+	// Generate known_hosts for SSH host key verification inside the container
+	if len(opts.SSHHosts) > 0 {
+		knownHostsFile, err := r.generateKnownHosts(opts.SSHHosts, r.store.LogDir())
+		if err == nil && knownHostsFile != "" {
+			containerArgs = append(containerArgs,
+				"-v", knownHostsFile+":"+containerHome+"/.ssh/known_hosts:ro",
+			)
 		}
 	}
 
@@ -367,6 +378,28 @@ func (r *Runner) WaitForContainer(containerID string) (int, error) {
 		return 1, fmt.Errorf("parsing exit code %q: %w", exitCodeStr, err)
 	}
 	return exitCode, nil
+}
+
+// generateKnownHosts runs ssh-keyscan for the given hosts and writes the result
+// to a file in dir. Returns the file path, or empty string if no keys were obtained.
+// Errors are non-fatal: best-effort approach since ssh-keyscan may not be available.
+func (r *Runner) generateKnownHosts(hosts []string, dir string) (string, error) {
+	args := append([]string{"-T", "5"}, hosts...)
+	cmd := r.execFn("ssh-keyscan", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("ssh-keyscan: %w", err)
+	}
+	if stdout.Len() == 0 {
+		return "", nil
+	}
+	path := filepath.Join(dir, "known_hosts")
+	if err := os.WriteFile(path, stdout.Bytes(), 0644); err != nil {
+		return "", fmt.Errorf("writing known_hosts: %w", err)
+	}
+	return path, nil
 }
 
 // expandHome replaces ~ with the actual home directory.

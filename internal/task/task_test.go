@@ -467,8 +467,8 @@ func TestRunnerRunTask(t *testing.T) {
 	if calls[dockerIdx].Name != "docker" {
 		t.Errorf("docker call: got %q, want docker", calls[dockerIdx].Name)
 	}
-	if calls[dockerIdx].Args[0] != "run" || calls[dockerIdx].Args[1] != "-d" || calls[dockerIdx].Args[2] != "--rm" {
-		t.Errorf("docker args: got %v, want run -d --rm ...", calls[dockerIdx].Args)
+	if calls[dockerIdx].Args[0] != "run" || calls[dockerIdx].Args[1] != "-d" || calls[dockerIdx].Args[2] != "-t" || calls[dockerIdx].Args[3] != "--rm" {
+		t.Errorf("docker args: got %v, want run -d -t --rm ...", calls[dockerIdx].Args)
 	}
 	// Verify prompt is passed to claude
 	lastArg := calls[dockerIdx].Args[len(calls[dockerIdx].Args)-1]
@@ -700,6 +700,137 @@ func TestRenderStartupCommand(t *testing.T) {
 				t.Errorf("RenderStartupCommand(%q, %q) = %q, want %q", tt.cmd, tt.prompt, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunnerRunTaskWithSSHHosts(t *testing.T) {
+	store := newTestStore(t)
+	projectDir := t.TempDir()
+
+	var calls []execCall
+	callIdx := 0
+	execFn := func(name string, args ...string) *exec.Cmd {
+		calls = append(calls, execCall{Name: name, Args: args})
+		idx := callIdx
+		callIdx++
+		switch {
+		case idx == 0: // wt switch --create
+			return exec.Command("true")
+		case idx == 1 && name == "ssh-keyscan": // ssh-keyscan
+			return exec.Command("echo", "-n", "github.com ssh-ed25519 AAAAC3...")
+		case idx == 2: // docker run
+			return exec.Command("echo", "-n", "container-xyz")
+		default: // docker logs, docker wait
+			return exec.Command("true")
+		}
+	}
+
+	tk := &Task{
+		ID:          1,
+		Type:        TaskTypeRun,
+		Description: "test with ssh",
+		Status:      TaskStatusOpen,
+		CreatedAt:   time.Now(),
+		Repo:        "myrepo",
+		Branch:      "feat-ssh",
+	}
+	if err := store.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	runner := NewRunner(store, execFn, "docker")
+	err := runner.RunTask(tk, RunOpts{
+		ContainerName: "claude-code",
+		ContainerConfig: config.Container{
+			StartupCommands: []string{"exec claude -p {{.Prompt}}"},
+		},
+		ProjectDir: projectDir,
+		SSHHosts:   []string{"github.com", "gitlab.com"},
+	})
+	if err != nil {
+		t.Fatalf("RunTask: %v", err)
+	}
+
+	// Verify ssh-keyscan was called with the hosts
+	var keyscanCall *execCall
+	for i := range calls {
+		if calls[i].Name == "ssh-keyscan" {
+			keyscanCall = &calls[i]
+			break
+		}
+	}
+	if keyscanCall == nil {
+		t.Fatal("expected ssh-keyscan call")
+	}
+	argsStr := strings.Join(keyscanCall.Args, " ")
+	if !strings.Contains(argsStr, "github.com") || !strings.Contains(argsStr, "gitlab.com") {
+		t.Errorf("ssh-keyscan args missing hosts: %v", keyscanCall.Args)
+	}
+
+	// Verify known_hosts mount in docker run args
+	var dockerCall *execCall
+	for i := range calls {
+		if calls[i].Name == "docker" && len(calls[i].Args) > 0 && calls[i].Args[0] == "run" {
+			dockerCall = &calls[i]
+			break
+		}
+	}
+	if dockerCall == nil {
+		t.Fatal("expected docker run call")
+	}
+	allArgs := strings.Join(dockerCall.Args, " ")
+	if !strings.Contains(allArgs, "known_hosts:/home/node/.ssh/known_hosts:ro") {
+		t.Errorf("expected known_hosts mount in docker args, got: %v", dockerCall.Args)
+	}
+}
+
+func TestGenerateKnownHostsFailureNonFatal(t *testing.T) {
+	store := newTestStore(t)
+	projectDir := t.TempDir()
+
+	var calls []execCall
+	callIdx := 0
+	execFn := func(name string, args ...string) *exec.Cmd {
+		calls = append(calls, execCall{Name: name, Args: args})
+		idx := callIdx
+		callIdx++
+		switch {
+		case idx == 0: // wt
+			return exec.Command("true")
+		case idx == 1 && name == "ssh-keyscan": // ssh-keyscan fails
+			return exec.Command("false")
+		case idx == 2: // docker run
+			return exec.Command("echo", "-n", "container-abc")
+		default:
+			return exec.Command("true")
+		}
+	}
+
+	tk := &Task{
+		ID:          1,
+		Type:        TaskTypeRun,
+		Description: "test ssh fail",
+		Status:      TaskStatusOpen,
+		CreatedAt:   time.Now(),
+		Repo:        "myrepo",
+		Branch:      "feat-ssh-fail",
+	}
+	if err := store.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	runner := NewRunner(store, execFn, "docker")
+	err := runner.RunTask(tk, RunOpts{
+		ContainerName: "claude-code",
+		ContainerConfig: config.Container{
+			StartupCommands: []string{"exec claude -p {{.Prompt}}"},
+		},
+		ProjectDir: projectDir,
+		SSHHosts:   []string{"github.com"},
+	})
+	// Should succeed even though ssh-keyscan failed
+	if err != nil {
+		t.Fatalf("RunTask should succeed when ssh-keyscan fails: %v", err)
 	}
 }
 

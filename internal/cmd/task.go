@@ -246,6 +246,12 @@ var taskRunCmd = &cobra.Command{
 			}
 		}
 
+		// Collect SSH hosts from auth config for known_hosts generation
+		var sshHosts []string
+		for host := range cfg.Auth {
+			sshHosts = append(sshHosts, host)
+		}
+
 		runner := task.NewRunner(store, exec.Command, runtime)
 		if err := runner.RunTask(t, task.RunOpts{
 			ContainerName:   containerName,
@@ -256,6 +262,7 @@ var taskRunCmd = &cobra.Command{
 			HomeDir:         homeDir,
 			Notify:          notifyEnabled,
 			Vault:           kdbxVault,
+			SSHHosts:        sshHosts,
 		}); err != nil {
 			return err
 		}
