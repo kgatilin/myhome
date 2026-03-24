@@ -108,9 +108,9 @@ containers:
     image: claude-code-local:official
     firewall: true
     git_backup: true
+    go_deps_file: dependencies_go.txt    # installed at build time (git clone + go build for source: entries)
     startup_commands:
       - "if [ -f dependencies_python.txt ]; then pip install --user -q -r dependencies_python.txt; fi"
-      - "if [ -f dependencies_go.txt ]; then while IFS= read -r line; do case \"$line\" in source:*) repo=\"${line#source:}\"; url=\"${repo%% *}\"; pkg=\"${repo#* }\"; tmp=$(mktemp -d) && git clone --depth 1 https://\"$url\" \"$tmp\" && go build -o \"$GOPATH/bin/$(basename \"$pkg\")\" \"$tmp/$pkg\" && rm -rf \"$tmp\" ;; ''|\\#*) ;; *) go install \"$line\" ;; esac; done < dependencies_go.txt; fi"
     mounts:
       - ~/.ssh:ro
       - ~/.gitconfig:ro
