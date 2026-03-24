@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/vault"
 )
 
@@ -33,17 +32,35 @@ func NewRunner(store *Store, execFn ExecFunc, runtime string) *Runner {
 	}
 }
 
+// ContainerOpts holds container configuration for a task run.
+type ContainerOpts struct {
+	Name         string
+	Image        string
+	Firewall     bool
+	StartupCmds  []string
+	Mounts       []string
+	Volumes      []string
+	Env          map[string]string
+	HomeDir      string
+}
+
+// AuthOpts holds authentication configuration for a task run.
+type AuthOpts struct {
+	Profile     string            // profile name (for task metadata)
+	File        string            // resolved auth file path
+	Env         map[string]string // env vars from auth profile
+	ConfigDir   string            // Claude config directory
+}
+
 // RunOpts configures how to launch a task's container.
 type RunOpts struct {
-	ContainerName   string
-	ContainerConfig config.Container     // container definition from myhome.yml
-	AuthProfile     string
-	ClaudeConfig    *config.ClaudeConfig // Claude auth profiles config
-	ProjectDir      string
-	HomeDir         string             // user home dir for mount resolution
-	Notify          bool               // send desktop notification on completion
-	Vault           *vault.KDBXVault   // unlocked vault for resolving vault:// references (optional)
-	SSHHosts        []string           // SSH hosts to populate known_hosts via ssh-keyscan
+	Container  ContainerOpts
+	Auth       AuthOpts
+	ProjectDir string
+	HomeDir    string
+	Notify     bool
+	Vault      vault.Reader // unlocked vault for resolving vault:// references (optional)
+	SSHHosts   []string
 }
 
 // RunTask creates a worktree (via Worktrunk or git), launches a container with Claude,
@@ -68,9 +85,9 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	// Step 2: Build container run command matching the cod alias behavior
 	logFile := filepath.Join(r.store.LogDir(), fmt.Sprintf("%d.log", t.ID))
 
-	image := opts.ContainerConfig.Image
+	image := opts.Container.Image
 	if image == "" {
-		image = opts.ContainerName
+		image = opts.Container.Name
 	}
 
 	containerArgs := []string{
@@ -80,7 +97,7 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 
 	// Firewall: use NET_ADMIN/NET_RAW caps + host networking (like cod alias)
 	// The container's init-firewall.sh handles the actual firewall rules
-	if opts.ContainerConfig.Firewall {
+	if opts.Container.Firewall {
 		containerArgs = append(containerArgs,
 			"--cap-add=NET_ADMIN",
 			"--cap-add=NET_RAW",
@@ -97,15 +114,15 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	)
 
 	// Resolve container home dir (default /home/node)
-	containerHome := opts.ContainerConfig.HomeDir
+	containerHome := opts.Container.HomeDir
 	if containerHome == "" {
 		containerHome = "/home/node"
 	}
 
 	// Mount Claude config dir
 	claudeConfigDir := "~/.claude"
-	if opts.ClaudeConfig != nil && opts.ClaudeConfig.ConfigDir != "" {
-		claudeConfigDir = opts.ClaudeConfig.ConfigDir
+	if opts.Auth.ConfigDir != "" {
+		claudeConfigDir = opts.Auth.ConfigDir
 	}
 	resolvedConfigDir := expandHome(claudeConfigDir, opts.HomeDir)
 	containerArgs = append(containerArgs,
@@ -114,16 +131,13 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	)
 
 	// Mount Claude auth file based on profile
-	if opts.AuthProfile != "" && opts.ClaudeConfig != nil {
-		if profile, ok := opts.ClaudeConfig.AuthProfiles[opts.AuthProfile]; ok {
-			authFile := expandHome(profile.AuthFile, opts.HomeDir)
-			containerArgs = append(containerArgs,
-				"-v", authFile+":"+containerHome+"/.claude.json:ro",
-			)
-			// Add env vars from auth profile (e.g. CLAUDE_CODE_USE_VERTEX)
-			for k, v := range profile.Env {
-				containerArgs = append(containerArgs, "-e", k+"="+v)
-			}
+	if opts.Auth.File != "" {
+		authFile := expandHome(opts.Auth.File, opts.HomeDir)
+		containerArgs = append(containerArgs,
+			"-v", authFile+":"+containerHome+"/.claude.json:ro",
+		)
+		for k, v := range opts.Auth.Env {
+			containerArgs = append(containerArgs, "-e", k+"="+v)
 		}
 	}
 
@@ -138,19 +152,19 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 	}
 
 	// Apply mounts from container config
-	for _, m := range resolveMounts(opts.ContainerConfig.Mounts, opts.HomeDir) {
+	for _, m := range resolveMounts(opts.Container.Mounts, opts.HomeDir) {
 		containerArgs = append(containerArgs, "-v", m)
 	}
 
 	// Apply volumes from container config
-	for _, v := range opts.ContainerConfig.Volumes {
+	for _, v := range opts.Container.Volumes {
 		containerArgs = append(containerArgs, "-v", v)
 	}
 
 	// Environment variables from container config.
 	// Values wrapped in $(...) are evaluated as shell commands on the host.
 	// Values with vault:// prefix are resolved from the unlocked vault.
-	for k, v := range opts.ContainerConfig.Env {
+	for k, v := range opts.Container.Env {
 		resolved, err := resolveEnvValueWithVault(v, r.execFn, opts.Vault)
 		if err != nil {
 			return fmt.Errorf("resolving env %s: %w", k, err)
@@ -165,12 +179,12 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 
 	// Command: render startup commands with template variables
 	prompt := t.Description
-	if len(opts.ContainerConfig.StartupCommands) == 0 {
-		return fmt.Errorf("container %q has no startup_commands configured", opts.ContainerName)
+	if len(opts.Container.StartupCmds) == 0 {
+		return fmt.Errorf("container %q has no startup_commands configured", opts.Container.Name)
 	}
 
 	var parts []string
-	for _, sc := range opts.ContainerConfig.StartupCommands {
+	for _, sc := range opts.Container.StartupCmds {
 		parts = append(parts, RenderStartupCommand(sc, prompt))
 	}
 	startupScript := strings.Join(parts, " ; ")
@@ -194,9 +208,9 @@ func (r *Runner) RunTask(t *Task, opts RunOpts) error {
 
 	// Step 5: Update task fields and persist
 	t.Status = TaskStatusRunning
-	t.Container = opts.ContainerName
+	t.Container = opts.Container.Name
 	t.ContainerID = containerID
-	t.AuthProfile = opts.AuthProfile
+	t.AuthProfile = opts.Auth.Profile
 	t.WorktreePath = worktreePath
 	t.LogFile = logFile
 
@@ -415,7 +429,7 @@ func expandHome(path, homeDir string) string {
 
 // resolveEnvValueWithVault resolves an env value, supporting vault:// references,
 // $(...) shell evaluation, and plain strings.
-func resolveEnvValueWithVault(val string, execFn ExecFunc, v *vault.KDBXVault) (string, error) {
+func resolveEnvValueWithVault(val string, execFn ExecFunc, v vault.Reader) (string, error) {
 	if strings.HasPrefix(val, "vault://") {
 		if v == nil {
 			return "", fmt.Errorf("vault:// reference %q but no vault is unlocked", val)

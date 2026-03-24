@@ -130,7 +130,7 @@ func TestList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			plat := &mockPlatform{serviceStatus: tt.serviceStatus}
-			cfg := &config.Config{Users: tt.cfgUsers}
+			cfg := &config.Config{InfraConfig: config.InfraConfig{Users: tt.cfgUsers}}
 			state := &config.State{Users: tt.stateUsers}
 
 			users, err := user.List(cfg, state, plat)
@@ -192,9 +192,9 @@ func TestListServiceStatusError(t *testing.T) {
 	plat := &mockPlatform{
 		serviceStatusErr: fmt.Errorf("not found"),
 	}
-	cfg := &config.Config{
+	cfg := &config.Config{InfraConfig: config.InfraConfig{
 		Users: map[string]config.User{"agent1": {Env: "work"}},
-	}
+	}}
 	state := &config.State{Users: []string{"agent1"}}
 
 	users, err := user.List(cfg, state, plat)

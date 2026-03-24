@@ -1,0 +1,91 @@
+rules:
+  dag_check:
+    enabled: true
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+      - "cmd/*"
+
+  max_fan_out:
+    enabled: true
+    threshold: 8
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+      - "cmd/*"
+
+  coupling:
+    enabled: true
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+      - "cmd/*"
+    params:
+      ca_threshold: 10
+      ce_threshold: 10
+
+  instability:
+    enabled: true
+    error_on_violation: false
+    exclude:
+      - ".worktrees/*"
+
+  orphan_nodes:
+    enabled: false
+
+  hub_nodes:
+    enabled: true
+    threshold: 15
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+      - "cmd/*"
+
+  strongly_connected_components:
+    enabled: true
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+    params:
+      max_size: 1
+
+  layer_violations:
+    enabled: true
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+    params:
+      layers:
+        cmd: 0
+        agent: 1
+        daemon: 1
+        adapter: 1
+        task: 2
+        container: 2
+        remote: 2
+        vault: 3
+        repo: 3
+        config: 4
+        platform: 5
+
+  forbidden_dependencies:
+    enabled: true
+    error_on_violation: true
+    exclude:
+      - ".worktrees/*"
+    params:
+      rules:
+        # Domain packages should not import cmd
+        - from: agent
+          to: cmd
+        - from: task
+          to: cmd
+        - from: daemon
+          to: cmd
+        # Low-level packages should not import high-level ones
+        - from: config
+          to: agent
+        - from: config
+          to: task
+        - from: config
+          to: daemon

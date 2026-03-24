@@ -167,7 +167,8 @@ var remoteInitCmd = &cobra.Command{
 		fmt.Printf("Bootstrapping %s (%s) with env %s...\n", hostName, remoteCfg.Host, remoteCfg.Env)
 
 		if err := remote.Init(remote.InitOpts{
-			Remote:   remoteCfg,
+			Host:     remoteCfg.Host,
+			Env:      remoteCfg.Env,
 			HomeRepo: homeRepo,
 			VaultKey: vaultKey,
 		}, nil); err != nil {

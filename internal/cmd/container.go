@@ -72,7 +72,8 @@ var containerRunCmd = &cobra.Command{
 			if !ok {
 				return fmt.Errorf("unknown auth profile: %s", authName)
 			}
-			opts.AuthProfile = &profile
+			opts.AuthFile = profile.AuthFile
+			opts.AuthEnv = profile.Env
 			opts.ClaudeConfigDir = cfg.Claude.ConfigDir
 		}
 

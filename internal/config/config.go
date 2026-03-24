@@ -1,21 +1,26 @@
 package config
 
+// InfraConfig groups container, agent, and remote management settings.
+type InfraConfig struct {
+	ContainerRuntime string                   `yaml:"container_runtime"`
+	Containers       map[string]Container     `yaml:"containers"`
+	AgentTemplates   map[string]AgentTemplate `yaml:"agent_templates"`
+	Users            map[string]User          `yaml:"users"`
+	Remotes          map[string]Remote        `yaml:"remotes,omitempty"`
+	Schedules        []Schedule               `yaml:"schedules,omitempty"`
+	Agents           map[string]AgentConfig   `yaml:"agents,omitempty"`
+}
+
 // Config represents the full myhome.yml configuration.
 type Config struct {
-	Envs             map[string]Env            `yaml:"envs"`
-	Repos            []Repo                    `yaml:"repos"`
-	Tools            map[string]map[string]string `yaml:"tools"`
-	Packages         map[string]PackageSet     `yaml:"packages"`
-	Auth             map[string]AuthHost       `yaml:"auth"`
-	AgentTemplates   map[string]AgentTemplate  `yaml:"agent_templates"`
-	Users            map[string]User           `yaml:"users"`
-	ContainerRuntime string                    `yaml:"container_runtime"`
-	Containers       map[string]Container      `yaml:"containers"`
-	Claude           ClaudeConfig              `yaml:"claude"`
-	Tasks            TasksConfig               `yaml:"tasks"`
-	Remotes          map[string]Remote         `yaml:"remotes,omitempty"`
-	Schedules        []Schedule                `yaml:"schedules,omitempty"`
-	Agents           map[string]AgentConfig    `yaml:"agents,omitempty"`
+	Envs     map[string]Env               `yaml:"envs"`
+	Repos    []Repo                       `yaml:"repos"`
+	Tools    map[string]map[string]string `yaml:"tools"`
+	Packages map[string]PackageSet        `yaml:"packages"`
+	Auth     map[string]AuthHost          `yaml:"auth"`
+	Claude   ClaudeConfig                 `yaml:"claude"`
+	Tasks    TasksConfig                  `yaml:"tasks"`
+	InfraConfig `yaml:",inline"`
 }
 
 // Env defines an environment profile with included environment tags.
@@ -31,6 +36,7 @@ type Repo struct {
 	Container string          `yaml:"container,omitempty"`
 	Worktrees *WorktreeConfig `yaml:"worktrees,omitempty"`
 	PreRun    []PreRunHook    `yaml:"pre_run,omitempty"`
+	Workflow  *WorkflowConfig `yaml:"workflow,omitempty"`
 }
 
 // PreRunHook defines a pattern-matched command that runs on the host before container launch.

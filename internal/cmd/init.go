@@ -192,10 +192,12 @@ func loadOrCreateConfig(path string) (*config.Config, error) {
 			"base": {Include: []string{"base"}},
 			"full": {Include: []string{"base"}},
 		},
-		Tools:            map[string]map[string]string{"base": {"go": "latest"}},
-		Packages:         map[string]config.PackageSet{"base": {Brew: []string{"git"}, Apt: []string{"git"}}},
-		Auth:             map[string]config.AuthHost{},
-		ContainerRuntime: "auto",
+		Tools:    map[string]map[string]string{"base": {"go": "latest"}},
+		Packages: map[string]config.PackageSet{"base": {Brew: []string{"git"}, Apt: []string{"git"}}},
+		Auth:     map[string]config.AuthHost{},
+		InfraConfig: config.InfraConfig{
+			ContainerRuntime: "auto",
+		},
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

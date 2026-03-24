@@ -3,108 +3,88 @@ package platform
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
-// Darwin implements Platform for macOS.
-type Darwin struct{}
-
-func (d *Darwin) OS() string       { return "darwin" }
-func (d *Darwin) HomeDir() string  { return "/Users" }
-
-func (d *Darwin) UserHome(username string) string {
-	return filepath.Join("/Users", username)
+// darwinUserOps handles user and group management on macOS.
+type darwinUserOps struct {
+	cmdRunner
+	homeBase string
 }
 
-func (d *Darwin) CreateUser(username string) error {
-	cmd := exec.Command("sysadminctl", "-addUser", username, "-home", d.UserHome(username), "-shell", "/bin/zsh")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func (d *darwinUserOps) CreateUser(username string) error {
+	home := filepath.Join(d.homeBase, username)
+	if err := d.run("sysadminctl", "-addUser", username, "-home", home, "-shell", "/bin/zsh"); err != nil {
 		return fmt.Errorf("create user %s: %w", username, err)
 	}
 	return nil
 }
 
-func (d *Darwin) RemoveUser(username string, removeHome bool) error {
+func (d *darwinUserOps) RemoveUser(username string, removeHome bool) error {
 	args := []string{"-deleteUser", username}
 	if removeHome {
 		args = append(args, "-secure")
 	}
-	cmd := exec.Command("sysadminctl", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := d.run("sysadminctl", args...); err != nil {
 		return fmt.Errorf("remove user %s: %w", username, err)
 	}
 	return nil
 }
 
-func (d *Darwin) CreateGroup(group string) error {
-	cmd := exec.Command("dseditgroup", "-o", "create", group)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func (d *darwinUserOps) CreateGroup(group string) error {
+	if err := d.run("dseditgroup", "-o", "create", group); err != nil {
 		return fmt.Errorf("create group %s: %w", group, err)
 	}
 	return nil
 }
 
-func (d *Darwin) AddUserToGroup(username, group string) error {
-	cmd := exec.Command("dseditgroup", "-o", "edit", "-a", username, "-t", "user", group)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func (d *darwinUserOps) AddUserToGroup(username, group string) error {
+	if err := d.run("dseditgroup", "-o", "edit", "-a", username, "-t", "user", group); err != nil {
 		return fmt.Errorf("add %s to group %s: %w", username, group, err)
 	}
 	return nil
 }
 
-func (d *Darwin) SetReadOnlyACL(username, path string) error {
+func (d *darwinUserOps) SetReadOnlyACL(username, path string) error {
 	acl := fmt.Sprintf("user:%s allow list,search,readattr,readextattr,readsecurity,read", username)
-	cmd := exec.Command("chmod", "+a", acl, path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := d.run("chmod", "+a", acl, path); err != nil {
 		return fmt.Errorf("set ACL on %s for %s: %w", path, username, err)
 	}
 	return nil
 }
 
-func (d *Darwin) PackageManager() string { return "brew" }
+// darwinPackageOps handles package management on macOS via Homebrew.
+type darwinPackageOps struct {
+	cmdRunner
+}
 
-func (d *Darwin) InstallPackages(packages []string) error {
+func (d *darwinPackageOps) PackageManager() string { return "brew" }
+
+func (d *darwinPackageOps) InstallPackages(packages []string) error {
 	if len(packages) == 0 {
 		return nil
 	}
 	args := append([]string{"install"}, packages...)
-	cmd := exec.Command("brew", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := d.run("brew", args...); err != nil {
 		return fmt.Errorf("brew install: %w", err)
 	}
 	return nil
 }
 
-func (d *Darwin) InstallCaskPackages(packages []string) error {
+func (d *darwinPackageOps) InstallCaskPackages(packages []string) error {
 	if len(packages) == 0 {
 		return nil
 	}
 	args := append([]string{"install", "--cask"}, packages...)
-	cmd := exec.Command("brew", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := d.run("brew", args...); err != nil {
 		return fmt.Errorf("brew install --cask: %w", err)
 	}
 	return nil
 }
 
-func (d *Darwin) ListInstalledPackages() ([]string, error) {
-	out, err := exec.Command("brew", "list", "--formula", "-1").Output()
+func (d *darwinPackageOps) ListInstalledPackages() ([]string, error) {
+	out, err := d.output("brew", "list", "--formula", "-1")
 	if err != nil {
 		return nil, fmt.Errorf("brew list: %w", err)
 	}
@@ -115,9 +95,16 @@ func (d *Darwin) ListInstalledPackages() ([]string, error) {
 	return lines, nil
 }
 
-func (d *Darwin) ServiceInstall(name, command, username string, restart bool) error {
+// darwinServiceOps handles launchd service management on macOS.
+type darwinServiceOps struct {
+	cmdRunner
+	homeBase string
+}
+
+func (d *darwinServiceOps) ServiceInstall(name, command, username string, restart bool) error {
 	plist := generateLaunchdPlist(name, command, username, restart)
-	path := filepath.Join(d.UserHome(username), "Library", "LaunchAgents", fmt.Sprintf("com.myhome.%s.plist", name))
+	userHome := filepath.Join(d.homeBase, username)
+	path := filepath.Join(userHome, "Library", "LaunchAgents", fmt.Sprintf("com.myhome.%s.plist", name))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}
@@ -127,33 +114,48 @@ func (d *Darwin) ServiceInstall(name, command, username string, restart bool) er
 	return nil
 }
 
-func (d *Darwin) ServiceStart(name string) error {
-	cmd := exec.Command("launchctl", "load", "-w", launchdPlistPath(name))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func (d *darwinServiceOps) ServiceStart(name string) error {
+	if err := d.run("launchctl", "load", "-w", launchdPlistPath(name)); err != nil {
 		return fmt.Errorf("start service %s: %w", name, err)
 	}
 	return nil
 }
 
-func (d *Darwin) ServiceStop(name string) error {
-	cmd := exec.Command("launchctl", "unload", launchdPlistPath(name))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func (d *darwinServiceOps) ServiceStop(name string) error {
+	if err := d.run("launchctl", "unload", launchdPlistPath(name)); err != nil {
 		return fmt.Errorf("stop service %s: %w", name, err)
 	}
 	return nil
 }
 
-func (d *Darwin) ServiceStatus(name string) (bool, error) {
-	out, err := exec.Command("launchctl", "list").Output()
+func (d *darwinServiceOps) ServiceStatus(name string) (bool, error) {
+	out, err := d.output("launchctl", "list")
 	if err != nil {
 		return false, fmt.Errorf("launchctl list: %w", err)
 	}
 	label := fmt.Sprintf("com.myhome.%s", name)
 	return strings.Contains(string(out), label), nil
+}
+
+// Darwin implements Platform for macOS using composed sub-types.
+type Darwin struct {
+	darwinUserOps
+	darwinPackageOps
+	darwinServiceOps
+}
+
+func newDarwin() *Darwin {
+	return &Darwin{
+		darwinUserOps:    darwinUserOps{homeBase: "/Users"},
+		darwinPackageOps: darwinPackageOps{},
+		darwinServiceOps: darwinServiceOps{homeBase: "/Users"},
+	}
+}
+
+func (d *Darwin) OS() string      { return "darwin" }
+func (d *Darwin) HomeDir() string { return "/Users" }
+func (d *Darwin) UserHome(username string) string {
+	return filepath.Join("/Users", username)
 }
 
 func launchdPlistPath(name string) string {

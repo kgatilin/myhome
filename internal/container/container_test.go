@@ -8,9 +8,6 @@ import (
 )
 
 func TestDetectRuntime_Preferred(t *testing.T) {
-	// "auto" with no runtimes installed should error.
-	// We can't fully test LookPath without mocking, but we can test
-	// that a non-existent preferred runtime returns an error.
 	_, err := DetectRuntime("nonexistent-runtime-xyz")
 	if err == nil {
 		t.Error("expected error for nonexistent preferred runtime")
@@ -18,10 +15,8 @@ func TestDetectRuntime_Preferred(t *testing.T) {
 }
 
 func TestDetectRuntime_Auto(t *testing.T) {
-	// auto mode should either find a runtime or return a meaningful error.
 	result, err := DetectRuntime("auto")
 	if err != nil {
-		// No runtime installed in test env is fine, just check error message.
 		if result != "" {
 			t.Errorf("expected empty result on error, got %q", result)
 		}
@@ -95,31 +90,28 @@ func TestResolveAuth(t *testing.T) {
 	homeDir := "/home/testuser"
 
 	tests := []struct {
-		name           string
-		profile        config.AuthProfile
+		name            string
+		authFile        string
+		authEnv         map[string]string
 		claudeConfigDir string
-		wantMounts     int
-		wantEnvs       int
-		wantMountSub   string // substring that should appear in mounts
+		wantMounts      int
+		wantEnvs        int
+		wantMountSub    string
 	}{
 		{
-			name: "simple auth file",
-			profile: config.AuthProfile{
-				AuthFile: "~/.claude.json",
-			},
+			name:            "simple auth file",
+			authFile:        "~/.claude.json",
 			claudeConfigDir: "~/.claude",
-			wantMounts:      2, // auth file + config dir
+			wantMounts:      2,
 			wantEnvs:        0,
 			wantMountSub:    "/home/testuser/.claude.json",
 		},
 		{
-			name: "auth with env vars",
-			profile: config.AuthProfile{
-				AuthFile: "~/.claude-vertex.json",
-				Env: map[string]string{
-					"CLAUDE_CODE_USE_VERTEX":      "1",
-					"ANTHROPIC_VERTEX_PROJECT_ID": "my-project",
-				},
+			name:     "auth with env vars",
+			authFile: "~/.claude-vertex.json",
+			authEnv: map[string]string{
+				"CLAUDE_CODE_USE_VERTEX":      "1",
+				"ANTHROPIC_VERTEX_PROJECT_ID": "my-project",
 			},
 			claudeConfigDir: "~/.claude",
 			wantMounts:      2,
@@ -130,7 +122,7 @@ func TestResolveAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mounts, envVars := ResolveAuth(tt.profile, tt.claudeConfigDir, homeDir)
+			mounts, envVars := ResolveAuth(tt.authFile, tt.authEnv, tt.claudeConfigDir, homeDir)
 			if len(mounts) != tt.wantMounts {
 				t.Errorf("mounts: got %d, want %d: %v", len(mounts), tt.wantMounts, mounts)
 			}
@@ -154,8 +146,7 @@ func TestResolveAuth(t *testing.T) {
 
 func TestResolveAuth_ConfigDirMount(t *testing.T) {
 	homeDir := "/home/testuser"
-	profile := config.AuthProfile{AuthFile: "~/.claude.json"}
-	mounts, _ := ResolveAuth(profile, "~/.claude", homeDir)
+	mounts, _ := ResolveAuth("~/.claude.json", nil, "~/.claude", homeDir)
 
 	found := false
 	for _, m := range mounts {
@@ -187,7 +178,6 @@ func TestBuildArgs(t *testing.T) {
 	if !slices.Contains(args, "claude-code-local:official") {
 		t.Errorf("expected image tag in args: %v", args)
 	}
-	// Dockerfile path should be absolute.
 	fIdx := slices.Index(args, "-f")
 	if fIdx < 0 || fIdx+1 >= len(args) {
 		t.Fatal("expected -f flag with value")
@@ -205,80 +195,59 @@ func TestRunArgs(t *testing.T) {
 		name       string
 		ctr        config.Container
 		opts       RunOpts
-		wantArgs   []string // substrings that must appear
-		noWantArgs []string // substrings that must NOT appear
+		wantArgs   []string
+		noWantArgs []string
 	}{
 		{
-			name: "basic interactive",
-			ctr: config.Container{
-				Image: "test:latest",
-			},
+			name:     "basic interactive",
+			ctr:      config.Container{Image: "test:latest"},
 			opts:     RunOpts{},
 			wantArgs: []string{"run", "--name", "-it", "--rm", "test:latest"},
 		},
 		{
-			name: "detached mode",
-			ctr: config.Container{
-				Image: "test:latest",
-			},
+			name:       "detached mode",
+			ctr:        config.Container{Image: "test:latest"},
 			opts:       RunOpts{Detach: true},
 			wantArgs:   []string{"run", "-d"},
 			noWantArgs: []string{"-it", "--rm"},
 		},
 		{
-			name: "firewall enabled",
-			ctr: config.Container{
-				Image:    "test:latest",
-				Firewall: true,
-			},
+			name:     "firewall enabled",
+			ctr:      config.Container{Image: "test:latest", Firewall: true},
 			opts:     RunOpts{},
 			wantArgs: []string{"--network", "none"},
 		},
 		{
-			name: "with mounts",
-			ctr: config.Container{
-				Image:  "test:latest",
-				Mounts: []string{"~/.ssh:ro"},
-			},
+			name:     "with mounts",
+			ctr:      config.Container{Image: "test:latest", Mounts: []string{"~/.ssh:ro"}},
 			opts:     RunOpts{},
 			wantArgs: []string{"-v", "/home/testuser/.ssh:/home/testuser/.ssh:ro"},
 		},
 		{
-			name: "with project dir",
-			ctr: config.Container{
-				Image: "test:latest",
-			},
+			name:     "with project dir",
+			ctr:      config.Container{Image: "test:latest"},
 			opts:     RunOpts{ProjectDir: "/home/testuser/work/myproject"},
 			wantArgs: []string{"-v", "/home/testuser/work/myproject:/home/testuser/work/myproject", "-w", "/home/testuser/work/myproject"},
 		},
 		{
-			name: "with startup commands",
-			ctr: config.Container{
-				Image:           "test:latest",
-				StartupCommands: []string{"pip install -r requirements.txt", "echo ready"},
-			},
+			name:     "with startup commands",
+			ctr:      config.Container{Image: "test:latest", StartupCommands: []string{"pip install -r requirements.txt", "echo ready"}},
 			opts:     RunOpts{},
 			wantArgs: []string{"/bin/sh", "-c", "pip install -r requirements.txt && echo ready"},
 		},
 		{
 			name: "with auth profile",
-			ctr: config.Container{
-				Image: "test:latest",
-			},
+			ctr:  config.Container{Image: "test:latest"},
 			opts: RunOpts{
-				AuthProfile: &config.AuthProfile{
-					AuthFile: "~/.claude.json",
-					Env:      map[string]string{"MY_VAR": "value"},
-				},
+				AuthFile:        "~/.claude.json",
+				AuthEnv:         map[string]string{"MY_VAR": "value"},
 				ClaudeConfigDir: "~/.claude",
 			},
 			wantArgs: []string{"-e", "MY_VAR=value"},
 		},
 		{
-			name: "with extra args",
-			ctr: config.Container{
-				Image: "test:latest",
-			},
+			name:     "with extra args",
+			ctr:      config.Container{Image: "test:latest"},
 			opts:     RunOpts{ExtraArgs: []string{"--cpus", "2"}},
 			wantArgs: []string{"--cpus", "2"},
 		},
@@ -325,7 +294,6 @@ func TestExpandTilde(t *testing.T) {
 	}
 }
 
-// contains checks if s contains substr.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
 }

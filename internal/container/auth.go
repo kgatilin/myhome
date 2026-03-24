@@ -1,13 +1,9 @@
 package container
 
-import (
-	"github.com/kgatilin/myhome/internal/config"
-)
-
 // ResolveAuth returns the mount flags and environment variable flags needed
 // to inject a Claude auth profile into a container.
-func ResolveAuth(profile config.AuthProfile, claudeConfigDir string, homeDir string) (mounts []string, envVars []string) {
-	authFilePath := expandTilde(profile.AuthFile, homeDir)
+func ResolveAuth(authFile string, authEnv map[string]string, claudeConfigDir string, homeDir string) (mounts []string, envVars []string) {
+	authFilePath := expandTilde(authFile, homeDir)
 
 	// Mount the auth file into the container at the same path.
 	mounts = append(mounts, authFilePath+":"+authFilePath+":ro")
@@ -17,7 +13,7 @@ func ResolveAuth(profile config.AuthProfile, claudeConfigDir string, homeDir str
 	mounts = append(mounts, configDir+":"+configDir)
 
 	// Add environment variables from the profile.
-	for k, v := range profile.Env {
+	for k, v := range authEnv {
 		envVars = append(envVars, k+"="+v)
 	}
 

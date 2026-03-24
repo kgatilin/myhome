@@ -9,9 +9,9 @@ import (
 func Detect() (Platform, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		return &Darwin{}, nil
+		return newDarwin(), nil
 	case "linux":
-		return &Linux{}, nil
+		return newLinux(), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

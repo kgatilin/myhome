@@ -23,7 +23,7 @@ func TestDaemonPingPong(t *testing.T) {
 
 	d := &Daemon{
 		socketPath: socketPath,
-		store:      agentStore,
+		handler:    handler{store: agentStore},
 		stopCh:     make(chan struct{}),
 	}
 
@@ -86,7 +86,7 @@ func TestDaemonListEmpty(t *testing.T) {
 
 	d := &Daemon{
 		socketPath: socketPath,
-		store:      agentStore,
+		handler:    handler{store: agentStore},
 		stopCh:     make(chan struct{}),
 	}
 
