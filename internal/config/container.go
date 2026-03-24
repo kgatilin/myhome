@@ -6,6 +6,7 @@ type Container struct {
 	Image           string            `yaml:"image"`
 	Firewall        bool              `yaml:"firewall"`
 	GitBackup       bool              `yaml:"git_backup"`
+	GoDepsFile      string            `yaml:"go_deps_file,omitempty"` // path to dependencies_go.txt, processed at build time
 	StartupCommands []string          `yaml:"startup_commands,omitempty"`
 	Mounts          []string          `yaml:"mounts,omitempty"`
 	Volumes         []string          `yaml:"volumes,omitempty"`

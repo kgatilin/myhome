@@ -30,6 +30,9 @@ type ContainerInfo struct {
 }
 
 // Build builds a container image from the specified Dockerfile.
+// If GoDepsFile is configured, a second build layer is added that installs
+// Go dependencies (source: entries use git clone + go build, others use go install).
+// This ensures tools like archlint are available without network access at runtime.
 func Build(runtime string, name string, ctr config.Container, homeDir string) error {
 	args := BuildArgs(name, ctr, homeDir)
 	cmd := exec.Command(runtime, args...)
@@ -38,6 +41,55 @@ func Build(runtime string, name string, ctr config.Container, homeDir string) er
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build container %s: %w", name, err)
 	}
+
+	// Install Go dependencies as an additional layer on top of the base image.
+	if ctr.GoDepsFile != "" {
+		depsPath := expandTilde(ctr.GoDepsFile, homeDir)
+		if !filepath.IsAbs(depsPath) {
+			depsPath = filepath.Join(homeDir, depsPath)
+		}
+		if err := buildGoDeps(runtime, ctr.Image, depsPath); err != nil {
+			return fmt.Errorf("install go deps for %s: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+// buildGoDeps parses a Go dependencies file and builds a derived image
+// with all dependencies installed. The image tag is reused so the result
+// replaces the base image.
+func buildGoDeps(runtime, image, depsPath string) error {
+	deps, err := ParseGoDepsFile(depsPath)
+	if err != nil {
+		return err
+	}
+	if len(deps) == 0 {
+		return nil
+	}
+
+	dockerfile := GenerateDockerfile(image, deps)
+
+	// Write temporary Dockerfile
+	tmpDir, err := os.MkdirTemp("", "myhome-godeps-*")
+	if err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dfPath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dfPath, []byte(dockerfile), 0644); err != nil {
+		return fmt.Errorf("writing temp Dockerfile: %w", err)
+	}
+
+	fmt.Printf("Installing Go dependencies from %s...\n", filepath.Base(depsPath))
+	cmd := exec.Command(runtime, "build", "-t", image, "-f", dfPath, tmpDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("building go deps layer: %w", err)
+	}
+
 	return nil
 }
 
