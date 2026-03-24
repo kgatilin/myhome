@@ -102,7 +102,7 @@ var agentListCmd = &cobra.Command{
 		runtime, _ := container.DetectRuntime(cfg.ContainerRuntime)
 		mgr := agent.NewManager(store, exec.Command, runtime, homeDir)
 
-		fmt.Printf("%-15s %-12s %-15s %-8s %s\n", "NAME", "STATUS", "CONTAINER", "TURNS", "CREATED")
+		fmt.Printf("%-15s %-12s %-15s %-8s %-10s %s\n", "NAME", "STATUS", "CONTAINER", "TURNS", "COST", "CREATED")
 		for _, s := range states {
 			refreshed, _ := mgr.RefreshStatus(s.Name)
 			if refreshed != nil {
@@ -112,8 +112,9 @@ var agentListCmd = &cobra.Command{
 			if len(cid) > 12 {
 				cid = cid[:12]
 			}
-			fmt.Printf("%-15s %-12s %-15s %-8d %s\n",
-				s.Name, s.Status, cid, s.NumTurns, s.CreatedAt.Format("2006-01-02 15:04"))
+			cost := fmt.Sprintf("$%.2f", s.TotalCostUSD)
+			fmt.Printf("%-15s %-12s %-15s %-8d %-10s %s\n",
+				s.Name, s.Status, cid, s.NumTurns, cost, s.CreatedAt.Format("2006-01-02 15:04"))
 		}
 		return nil
 	},
@@ -126,15 +127,27 @@ var agentSendCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		message := args[1]
+		maxTurns, _ := cmd.Flags().GetInt("max-turns")
+
+		// If no flag, check agent config default
+		if maxTurns == 0 {
+			if _, agentCfg, err := loadAgentConfig(name); err == nil {
+				maxTurns = agentCfg.MaxTurns
+			}
+		}
 
 		// Try daemon first
 		homeDir, _ := os.UserHomeDir()
 		socketPath := daemon.SocketPath(homeDir)
 		if daemon.IsRunning(socketPath) {
-			resp, err := daemon.Call(socketPath, "send", map[string]string{
+			params := map[string]any{
 				"name":    name,
 				"message": message,
-			})
+			}
+			if maxTurns > 0 {
+				params["max_turns"] = maxTurns
+			}
+			resp, err := daemon.Call(socketPath, "send", params)
 			if err != nil {
 				return err
 			}
@@ -156,7 +169,11 @@ var agentSendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		response, err := mgr.Send(name, message)
+		var opts *agent.SendOptions
+		if maxTurns > 0 {
+			opts = &agent.SendOptions{MaxTurns: maxTurns}
+		}
+		response, err := mgr.Send(name, message, opts)
 		if err != nil {
 			return err
 		}
@@ -331,7 +348,7 @@ var agentChatCmd = &cobra.Command{
 				}
 				json.Unmarshal(resp.Result, &response)
 			} else {
-				r, err := mgr.Send(name, line)
+				r, err := mgr.Send(name, line, nil)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					continue
@@ -343,9 +360,42 @@ var agentChatCmd = &cobra.Command{
 	},
 }
 
+var agentStatsCmd = &cobra.Command{
+	Use:               "stats <name>",
+	Short:             "Show agent resource usage (turns, cost)",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: agentNameCompletionFunc,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		store, err := defaultAgentStore()
+		if err != nil {
+			return err
+		}
+		state, err := store.Load(name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Agent:      %s\n", state.Name)
+		fmt.Printf("Status:     %s\n", state.Status)
+		fmt.Printf("Turns:      %d\n", state.NumTurns)
+		fmt.Printf("Total cost: $%.4f\n", state.TotalCostUSD)
+		fmt.Printf("Created:    %s\n", state.CreatedAt.Format("2006-01-02 15:04:05"))
+		if state.Model != "" {
+			fmt.Printf("Model:      %s\n", state.Model)
+		}
+		if state.SessionID != "" {
+			fmt.Printf("Session:    %s\n", state.SessionID)
+		}
+		return nil
+	},
+}
+
 func init() {
 	agentLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	agentLogsCmd.Flags().Bool("raw", false, "Show raw NDJSON instead of formatted output")
+
+	agentSendCmd.Flags().Int("max-turns", 0, "Maximum agentic turns for this message (0 = unlimited)")
 
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentListCmd)
@@ -355,6 +405,7 @@ func init() {
 	agentCmd.AddCommand(agentStopCmd)
 	agentCmd.AddCommand(agentRestartCmd)
 	agentCmd.AddCommand(agentRmCmd)
+	agentCmd.AddCommand(agentStatsCmd)
 }
 
 // loadAgentConfig loads the full config and the named agent's config.
