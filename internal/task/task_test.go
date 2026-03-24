@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kgatilin/myhome/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -131,18 +130,20 @@ func TestSaveRunTask(t *testing.T) {
 	store := newTestStore(t)
 
 	task := &Task{
-		ID:           1,
-		Type:         TaskTypeRun,
-		Description:  "run tests",
-		Status:       TaskStatusRunning,
-		CreatedAt:    time.Now(),
-		Repo:         "myrepo",
-		Branch:       "feature-x",
-		ContainerID:  "abc123",
-		Container:    "claude-code",
-		AuthProfile:  "work",
-		WorktreePath: "/home/user/dev/myrepo/.worktrees/feature-x",
-		LogFile:      "/tmp/tasks/logs/1.log",
+		ID:          1,
+		Type:        TaskTypeRun,
+		Description: "run tests",
+		Status:      TaskStatusRunning,
+		CreatedAt:   time.Now(),
+		RunState: RunState{
+			Repo:         "myrepo",
+			Branch:       "feature-x",
+			ContainerID:  "abc123",
+			Container:    "claude-code",
+			AuthProfile:  "work",
+			WorktreePath: "/home/user/dev/myrepo/.worktrees/feature-x",
+			LogFile:      "/tmp/tasks/logs/1.log",
+		},
 	}
 
 	if err := store.Save(task); err != nil {
@@ -302,20 +303,22 @@ func TestTaskYAMLRoundTrip(t *testing.T) {
 	doneAt := now.Add(time.Hour).Truncate(time.Second)
 
 	original := &Task{
-		ID:           42,
-		Type:         TaskTypeRun,
-		Domain:       "work",
-		Description:  "implement feature",
-		Status:       TaskStatusDone,
-		CreatedAt:    now,
-		DoneAt:       &doneAt,
-		Repo:         "myrepo",
-		Branch:       "feat-42",
-		ContainerID:  "deadbeef",
-		Container:    "claude-code",
-		AuthProfile:  "personal",
-		WorktreePath: "/home/user/dev/myrepo/.worktrees/feat-42",
-		LogFile:      "/tmp/tasks/logs/42.log",
+		ID:          42,
+		Type:        TaskTypeRun,
+		Domain:      "work",
+		Description: "implement feature",
+		Status:      TaskStatusDone,
+		CreatedAt:   now,
+		DoneAt:      &doneAt,
+		RunState: RunState{
+			Repo:         "myrepo",
+			Branch:       "feat-42",
+			ContainerID:  "deadbeef",
+			Container:    "claude-code",
+			AuthProfile:  "personal",
+			WorktreePath: "/home/user/dev/myrepo/.worktrees/feat-42",
+			LogFile:      "/tmp/tasks/logs/42.log",
+		},
 	}
 
 	data, err := yaml.Marshal(original)
@@ -426,8 +429,7 @@ func TestRunnerRunTask(t *testing.T) {
 		Description: "test run",
 		Status:      TaskStatusOpen,
 		CreatedAt:   time.Now(),
-		Repo:        "myrepo",
-		Branch:      "feat-1",
+		RunState:    RunState{Repo: "myrepo", Branch: "feat-1"},
 	}
 	if err := store.Save(tk); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -435,12 +437,9 @@ func TestRunnerRunTask(t *testing.T) {
 
 	runner := NewRunner(store, execFn, "docker")
 	err := runner.RunTask(tk, RunOpts{
-		ContainerName: "claude-code",
-		ContainerConfig: config.Container{
-			StartupCommands: []string{"exec claude --dangerously-skip-permissions -p {{.Prompt}}"},
-		},
-		AuthProfile: "work",
-		ProjectDir:  projectDir,
+		Container:  ContainerOpts{Name: "claude-code", StartupCmds: []string{"exec claude --dangerously-skip-permissions -p {{.Prompt}}"}},
+		Auth:       AuthOpts{Profile: "work"},
+		ProjectDir: projectDir,
 	})
 	if err != nil {
 		t.Fatalf("RunTask: %v", err)
@@ -505,11 +504,10 @@ func TestRunnerRunTaskWorktreeFailure(t *testing.T) {
 	execFn := fakeExecFailure(&calls)
 
 	tk := &Task{
-		ID:     1,
-		Type:   TaskTypeRun,
-		Status: TaskStatusOpen,
-		Repo:   "myrepo",
-		Branch: "feat-1",
+		ID:       1,
+		Type:     TaskTypeRun,
+		Status:   TaskStatusOpen,
+		RunState: RunState{Repo: "myrepo", Branch: "feat-1"},
 	}
 	if err := store.Save(tk); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -517,8 +515,8 @@ func TestRunnerRunTaskWorktreeFailure(t *testing.T) {
 
 	runner := NewRunner(store, execFn, "docker")
 	err := runner.RunTask(tk, RunOpts{
-		ContainerName: "claude-code",
-		ProjectDir:    projectDir,
+		Container:  ContainerOpts{Name: "claude-code"},
+		ProjectDir: projectDir,
 	})
 	if err == nil {
 		t.Error("expected error when worktree creation fails")
@@ -535,8 +533,7 @@ func TestTaskAddWithRepoCreatesRunType(t *testing.T) {
 		Description: "fix the bug",
 		Status:      TaskStatusOpen,
 		CreatedAt:   time.Now(),
-		Repo:        "myrepo",
-		Branch:      "fix-123",
+		RunState:    RunState{Repo: "myrepo", Branch: "fix-123"},
 	}
 	if err := store.Save(tk); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -580,11 +577,11 @@ func TestRunnerStop(t *testing.T) {
 
 	// Create a running task
 	task := &Task{
-		ID:          1,
-		Type:        TaskTypeRun,
-		Status:      TaskStatusRunning,
-		ContainerID: "abc123",
-		CreatedAt:   time.Now(),
+		ID:        1,
+		Type:      TaskTypeRun,
+		Status:    TaskStatusRunning,
+		CreatedAt: time.Now(),
+		RunState:  RunState{ContainerID: "abc123"},
 	}
 	if err := store.Save(task); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -731,8 +728,7 @@ func TestRunnerRunTaskWithSSHHosts(t *testing.T) {
 		Description: "test with ssh",
 		Status:      TaskStatusOpen,
 		CreatedAt:   time.Now(),
-		Repo:        "myrepo",
-		Branch:      "feat-ssh",
+		RunState:    RunState{Repo: "myrepo", Branch: "feat-ssh"},
 	}
 	if err := store.Save(tk); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -740,10 +736,7 @@ func TestRunnerRunTaskWithSSHHosts(t *testing.T) {
 
 	runner := NewRunner(store, execFn, "docker")
 	err := runner.RunTask(tk, RunOpts{
-		ContainerName: "claude-code",
-		ContainerConfig: config.Container{
-			StartupCommands: []string{"exec claude -p {{.Prompt}}"},
-		},
+		Container:  ContainerOpts{Name: "claude-code", StartupCmds: []string{"exec claude -p {{.Prompt}}"}},
 		ProjectDir: projectDir,
 		SSHHosts:   []string{"github.com", "gitlab.com"},
 	})
@@ -812,8 +805,7 @@ func TestGenerateKnownHostsFailureNonFatal(t *testing.T) {
 		Description: "test ssh fail",
 		Status:      TaskStatusOpen,
 		CreatedAt:   time.Now(),
-		Repo:        "myrepo",
-		Branch:      "feat-ssh-fail",
+		RunState:    RunState{Repo: "myrepo", Branch: "feat-ssh-fail"},
 	}
 	if err := store.Save(tk); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -821,10 +813,7 @@ func TestGenerateKnownHostsFailureNonFatal(t *testing.T) {
 
 	runner := NewRunner(store, execFn, "docker")
 	err := runner.RunTask(tk, RunOpts{
-		ContainerName: "claude-code",
-		ContainerConfig: config.Container{
-			StartupCommands: []string{"exec claude -p {{.Prompt}}"},
-		},
+		Container:  ContainerOpts{Name: "claude-code", StartupCmds: []string{"exec claude -p {{.Prompt}}"}},
 		ProjectDir: projectDir,
 		SSHHosts:   []string{"github.com"},
 	})
@@ -838,11 +827,11 @@ func TestRunnerWithCustomRuntime(t *testing.T) {
 	store := newTestStore(t)
 
 	task := &Task{
-		ID:          1,
-		Type:        TaskTypeRun,
-		Status:      TaskStatusRunning,
-		ContainerID: "abc123",
-		CreatedAt:   time.Now(),
+		ID:        1,
+		Type:      TaskTypeRun,
+		Status:    TaskStatusRunning,
+		CreatedAt: time.Now(),
+		RunState:  RunState{ContainerID: "abc123"},
 	}
 	if err := store.Save(task); err != nil {
 		t.Fatalf("Save: %v", err)

@@ -157,7 +157,8 @@ func TestInit(t *testing.T) {
 	execFn := fakeExec(&calls)
 
 	err := Init(InitOpts{
-		Remote:   testRemote(),
+		Host:     "user@vps.example.com",
+		Env:      "work",
 		HomeRepo: "git@github.com:user/home.git",
 		VaultKey: "/home/user/.secrets/vault.key",
 	}, execFn)
@@ -170,32 +171,21 @@ func TestInit(t *testing.T) {
 		t.Fatalf("expected at least 5 calls, got %d: %v", len(calls), calls)
 	}
 
-	// Step 1: ssh-copy-id
 	if !containsStr(calls[0], "ssh-copy-id") {
 		t.Errorf("call 0: expected ssh-copy-id, got %q", calls[0])
 	}
-
-	// Step 2: git clone
 	if !containsStr(calls[1], "git clone") {
 		t.Errorf("call 1: expected git clone, got %q", calls[1])
 	}
-
-	// Step 3: mkdir ~/.secrets
 	if !containsStr(calls[2], "mkdir") {
 		t.Errorf("call 2: expected mkdir, got %q", calls[2])
 	}
-
-	// Step 4: scp vault key
 	if !containsStr(calls[3], "scp") {
 		t.Errorf("call 3: expected scp, got %q", calls[3])
 	}
-
-	// Step 5: bootstrap.sh
 	if !containsStr(calls[4], "bootstrap.sh") {
 		t.Errorf("call 4: expected bootstrap.sh, got %q", calls[4])
 	}
-
-	// Step 6: myhome init
 	if len(calls) > 5 && !containsStr(calls[5], "myhome init") {
 		t.Errorf("call 5: expected myhome init, got %q", calls[5])
 	}
@@ -206,7 +196,8 @@ func TestInitNoVaultKey(t *testing.T) {
 	execFn := fakeExec(&calls)
 
 	err := Init(InitOpts{
-		Remote:   testRemote(),
+		Host:     "user@vps.example.com",
+		Env:      "work",
 		HomeRepo: "git@github.com:user/home.git",
 	}, execFn)
 	if err != nil {
@@ -221,7 +212,8 @@ func TestInitNoVaultKey(t *testing.T) {
 
 func TestInitSSHCopyIDFailure(t *testing.T) {
 	err := Init(InitOpts{
-		Remote:   testRemote(),
+		Host:     "user@vps.example.com",
+		Env:      "work",
 		HomeRepo: "git@github.com:user/home.git",
 	}, fakeExecFail())
 	if err == nil {

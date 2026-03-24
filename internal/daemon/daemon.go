@@ -19,15 +19,26 @@ import (
 	"github.com/kgatilin/myhome/internal/container"
 )
 
+// agentManager abstracts agent lifecycle operations.
+type agentManager interface {
+	Create(name string, agentCfg config.AgentConfig, cfg *config.Config) error
+	Stop(name string) error
+	Restart(name string, agentCfg config.AgentConfig, cfg *config.Config) error
+	Remove(name string) error
+	Send(name, message string) (string, error)
+	RefreshStatus(name string) (*agent.State, error)
+}
+
+// agentStore abstracts agent state persistence.
+type agentStore interface {
+	Load(name string) (*agent.State, error)
+	List() ([]*agent.State, error)
+}
+
 // Daemon is the long-running supervisor that manages agents.
 type Daemon struct {
 	socketPath string
-	manager    *agent.Manager
-	store      *agent.Store
-	cfg        *config.Config
-	execFn     agent.ExecFunc
-	runtime    string
-	homeDir    string
+	handler    handler
 	listener   net.Listener
 	mu         sync.Mutex
 	stopCh     chan struct{}
@@ -46,7 +57,6 @@ func New(cfg Config) (*Daemon, error) {
 		cfg.SocketPath = filepath.Join(cfg.HomeDir, ".myhome", "myhome.sock")
 	}
 
-	// Load myhome config
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
 		return nil, fmt.Errorf("finding config: %w", err)
@@ -70,24 +80,20 @@ func New(cfg Config) (*Daemon, error) {
 
 	return &Daemon{
 		socketPath: cfg.SocketPath,
-		manager:    manager,
-		store:      agentStore,
-		cfg:        myhomeCfg,
-		execFn:     cfg.ExecFn,
-		runtime:    runtime,
-		homeDir:    cfg.HomeDir,
-		stopCh:     make(chan struct{}),
+		handler: handler{
+			manager: manager,
+			store:   agentStore,
+			agents:  myhomeCfg.Agents,
+		},
+		stopCh: make(chan struct{}),
 	}, nil
 }
 
 // Run starts the daemon, listens on the unix socket, and blocks until stopped.
 func (d *Daemon) Run() error {
-	// Ensure socket directory exists
 	if err := os.MkdirAll(filepath.Dir(d.socketPath), 0o755); err != nil {
 		return fmt.Errorf("creating socket directory: %w", err)
 	}
-
-	// Remove stale socket
 	os.Remove(d.socketPath)
 
 	listener, err := net.Listen("unix", d.socketPath)
@@ -96,7 +102,6 @@ func (d *Daemon) Run() error {
 	}
 	d.listener = listener
 
-	// Handle signals for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -113,7 +118,6 @@ func (d *Daemon) Run() error {
 		}
 	}()
 
-	// Start health check loop
 	go d.healthCheckLoop(ctx)
 
 	fmt.Printf("Daemon listening on %s\n", d.socketPath)
@@ -173,125 +177,27 @@ func (d *Daemon) dispatch(req Request) Response {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	h := &d.handler
 	switch req.Method {
 	case "create":
-		return d.handleCreate(req.Params)
+		return h.handleCreate(req.Params)
 	case "list":
-		return d.handleList()
+		return h.handleList()
 	case "send":
-		return d.handleSend(req.Params)
+		return h.handleSend(req.Params)
 	case "stop":
-		return d.handleStop(req.Params)
+		return h.handleStop(req.Params)
 	case "restart":
-		return d.handleRestart(req.Params)
+		return h.handleRestart(req.Params)
 	case "remove":
-		return d.handleRemove(req.Params)
+		return h.handleRemove(req.Params)
 	case "status":
-		return d.handleStatus(req.Params)
+		return h.handleStatus(req.Params)
 	case "ping":
 		return jsonResult("pong")
 	default:
 		return Response{Error: fmt.Sprintf("unknown method: %s", req.Method)}
 	}
-}
-
-type nameParam struct {
-	Name string `json:"name"`
-}
-
-type sendParam struct {
-	Name    string `json:"name"`
-	Message string `json:"message"`
-}
-
-func (d *Daemon) handleCreate(params json.RawMessage) Response {
-	var p nameParam
-	if err := json.Unmarshal(params, &p); err != nil {
-		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
-	}
-	agentCfg, ok := d.cfg.Agents[p.Name]
-	if !ok {
-		return Response{Error: fmt.Sprintf("unknown agent %q in config", p.Name)}
-	}
-	if err := d.manager.Create(p.Name, agentCfg, d.cfg); err != nil {
-		return Response{Error: err.Error()}
-	}
-	state, _ := d.store.Load(p.Name)
-	return jsonResult(state)
-}
-
-func (d *Daemon) handleList() Response {
-	states, err := d.store.List()
-	if err != nil {
-		return Response{Error: err.Error()}
-	}
-	// Refresh status for each agent
-	for _, s := range states {
-		d.manager.RefreshStatus(s.Name)
-	}
-	states, _ = d.store.List()
-	return jsonResult(states)
-}
-
-func (d *Daemon) handleSend(params json.RawMessage) Response {
-	var p sendParam
-	if err := json.Unmarshal(params, &p); err != nil {
-		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
-	}
-	response, err := d.manager.Send(p.Name, p.Message)
-	if err != nil {
-		return Response{Error: err.Error()}
-	}
-	return jsonResult(response)
-}
-
-func (d *Daemon) handleStop(params json.RawMessage) Response {
-	var p nameParam
-	if err := json.Unmarshal(params, &p); err != nil {
-		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
-	}
-	if err := d.manager.Stop(p.Name); err != nil {
-		return Response{Error: err.Error()}
-	}
-	return jsonResult("stopped")
-}
-
-func (d *Daemon) handleRestart(params json.RawMessage) Response {
-	var p nameParam
-	if err := json.Unmarshal(params, &p); err != nil {
-		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
-	}
-	agentCfg, ok := d.cfg.Agents[p.Name]
-	if !ok {
-		return Response{Error: fmt.Sprintf("unknown agent %q in config", p.Name)}
-	}
-	if err := d.manager.Restart(p.Name, agentCfg, d.cfg); err != nil {
-		return Response{Error: err.Error()}
-	}
-	return jsonResult("restarted")
-}
-
-func (d *Daemon) handleRemove(params json.RawMessage) Response {
-	var p nameParam
-	if err := json.Unmarshal(params, &p); err != nil {
-		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
-	}
-	if err := d.manager.Remove(p.Name); err != nil {
-		return Response{Error: err.Error()}
-	}
-	return jsonResult("removed")
-}
-
-func (d *Daemon) handleStatus(params json.RawMessage) Response {
-	var p nameParam
-	if err := json.Unmarshal(params, &p); err != nil {
-		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
-	}
-	state, err := d.manager.RefreshStatus(p.Name)
-	if err != nil {
-		return Response{Error: err.Error()}
-	}
-	return jsonResult(state)
 }
 
 // healthCheckLoop periodically checks agent containers and updates state.
@@ -305,11 +211,11 @@ func (d *Daemon) healthCheckLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			d.mu.Lock()
-			states, err := d.store.List()
+			states, err := d.handler.store.List()
 			if err == nil {
 				for _, s := range states {
 					if s.Status == agent.StatusRunning {
-						d.manager.RefreshStatus(s.Name)
+						d.handler.manager.RefreshStatus(s.Name)
 					}
 				}
 			}
@@ -339,7 +245,6 @@ func IsRunning(socketPath string) bool {
 	}
 	defer conn.Close()
 
-	// Send a ping
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
 	encoder.Encode(Request{Method: "ping"})

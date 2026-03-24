@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-
-	"github.com/kgatilin/myhome/internal/config"
 )
 
 // InitOpts configures the remote init bootstrap process.
 type InitOpts struct {
-	Remote     config.Remote
+	Host       string // remote host (e.g. user@hostname)
+	Env        string // environment name for myhome init
 	HomeRepo   string // git clone URL for the home repo
 	VaultKey   string // local path to vault key file (~/.secrets/vault.key)
 	RemoteUser string // optional: override user parsed from host
@@ -23,7 +22,7 @@ func Init(opts InitOpts, execFn ExecFunc) error {
 		execFn = DefaultExec
 	}
 
-	host := opts.Remote.Host
+	host := opts.Host
 
 	// Step 1: ensure SSH key is on VPS (skip if already accessible)
 	if err := runSSH(execFn, host, "true"); err != nil {
@@ -61,7 +60,7 @@ func Init(opts InitOpts, execFn ExecFunc) error {
 	}
 
 	// Step 5: SSH in, run myhome init --env <env>
-	initCmd := fmt.Sprintf("myhome init --env %s", opts.Remote.Env)
+	initCmd := fmt.Sprintf("myhome init --env %s", opts.Env)
 	if err := runSSH(execFn, host, initCmd); err != nil {
 		return fmt.Errorf("running myhome init on %s: %w", host, err)
 	}

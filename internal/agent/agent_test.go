@@ -44,14 +44,14 @@ func TestManagerCreate(t *testing.T) {
 		Model:        "sonnet",
 		SystemPrompt: "You are a test agent",
 	}
-	cfg := &config.Config{
+	cfg := &config.Config{InfraConfig: config.InfraConfig{
 		Containers: map[string]config.Container{
 			"claude-personal": {
 				Image:           "claude:latest",
 				StartupCommands: []string{"exec claude -p {{.Prompt}}"},
 			},
 		},
-	}
+	}}
 
 	if err := mgr.Create("test", agentCfg, cfg); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -93,11 +93,11 @@ func TestManagerCreateDuplicateRunning(t *testing.T) {
 	mgr := NewManager(store, mockExecFunc(outputs), "docker", "/home/testuser")
 
 	agentCfg := config.AgentConfig{Container: "test"}
-	cfg := &config.Config{
+	cfg := &config.Config{InfraConfig: config.InfraConfig{
 		Containers: map[string]config.Container{
 			"test": {Image: "test:latest"},
 		},
-	}
+	}}
 
 	err = mgr.Create("existing", agentCfg, cfg)
 	if err == nil {
@@ -190,7 +190,7 @@ func TestBuildContainerArgs(t *testing.T) {
 	}
 	cfg := &config.Config{}
 
-	args, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	args, err := mgr.ctr.buildContainerArgs("myhome-agent-test", agentCfg, ctrCfg, cfg)
 	if err != nil {
 		t.Fatalf("buildContainerArgs: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestBuildContainerArgsSSHKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 
-	args, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	args, err := mgr.ctr.buildContainerArgs("myhome-agent-test", agentCfg, ctrCfg, cfg)
 	if err != nil {
 		t.Fatalf("buildContainerArgs: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestBuildContainerArgsVaultSecrets(t *testing.T) {
 	}
 	cfg := &config.Config{}
 
-	args, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	args, err := mgr.ctr.buildContainerArgs("myhome-agent-test", agentCfg, ctrCfg, cfg)
 	if err != nil {
 		t.Fatalf("buildContainerArgs: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestBuildContainerArgsSSHNoVault(t *testing.T) {
 	}
 	cfg := &config.Config{}
 
-	_, err := mgr.buildContainerArgs("myhome-agent-test", "test", agentCfg, ctrCfg, cfg)
+	_, err := mgr.ctr.buildContainerArgs("myhome-agent-test", agentCfg, ctrCfg, cfg)
 	if err == nil {
 		t.Error("buildContainerArgs should fail when SSH key requested but no vault set")
 	}

@@ -254,7 +254,7 @@ func TestAdvanceStage(t *testing.T) {
 	}
 
 	// No stage set, no files — should return "plan"
-	tk := &Task{WorktreePath: dir}
+	tk := &Task{RunState: RunState{WorktreePath: dir}}
 	stage, err := AdvanceStage(tk, wf)
 	if err != nil {
 		t.Fatalf("AdvanceStage: %v", err)
@@ -312,7 +312,7 @@ func TestAdvanceStageDetectsSkippedStages(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "impl.md"), []byte("done"), 0o644)
 	os.WriteFile(filepath.Join(dir, "review.md"), []byte("done"), 0o644)
 
-	tk := &Task{WorktreePath: dir}
+	tk := &Task{RunState: RunState{WorktreePath: dir}}
 	_, err := AdvanceStage(tk, wf)
 	if err == nil {
 		t.Error("expected error when all stages complete")
@@ -329,12 +329,13 @@ func TestTaskYAMLRoundTripWithWorkflow(t *testing.T) {
 		Description: "/jira_ticket_start UAGENT-500",
 		Status:      TaskStatusRunning,
 		CreatedAt:   now,
-		Repo:        "uagent",
-		Branch:      "UAGENT-500",
-		Stage:       "start",
-		StageStatus: StageStatusRunning,
-		WorkflowParams: map[string]string{
-			"ticket": "UAGENT-500",
+		RunState:    RunState{Repo: "uagent", Branch: "UAGENT-500"},
+		WorkflowState: WorkflowState{
+			Stage:       "start",
+			StageStatus: StageStatusRunning,
+			WorkflowParams: map[string]string{
+				"ticket": "UAGENT-500",
+			},
 		},
 	}
 

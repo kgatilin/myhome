@@ -15,12 +15,14 @@ func TestStoreSaveAndLoad(t *testing.T) {
 	}
 
 	state := &State{
-		Name:      "test-agent",
-		Status:    StatusRunning,
-		Container: "claude-personal",
-		CreatedAt: time.Now().Truncate(time.Second),
+		Name:        "test-agent",
+		Status:      StatusRunning,
+		Container:   "claude-personal",
+		CreatedAt:   time.Now().Truncate(time.Second),
 		ContainerID: "abc123def456",
-		NumTurns:  5,
+		AgentRuntime: AgentRuntime{
+			NumTurns: 5,
+		},
 	}
 
 	if err := store.Save(state); err != nil {

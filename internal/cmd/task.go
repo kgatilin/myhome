@@ -54,8 +54,7 @@ var taskAddCmd = &cobra.Command{
 			Description: args[0],
 			Status:      task.TaskStatusOpen,
 			CreatedAt:   time.Now(),
-			Repo:        repo,
-			Branch:      branch,
+			RunState:    task.RunState{Repo: repo, Branch: branch},
 		}
 
 		// Parse workflow params (--param key=value)
@@ -130,8 +129,7 @@ var taskRunCmd = &cobra.Command{
 				Description: prompt,
 				Status:      task.TaskStatusOpen,
 				CreatedAt:   time.Now(),
-				Repo:        repoName,
-				Branch:      branch,
+				RunState:    task.RunState{Repo: repoName, Branch: branch},
 			}
 
 			// Parse workflow params (--param key=value)
@@ -271,7 +269,7 @@ var taskRunCmd = &cobra.Command{
 		t.Description = task.EnrichPrompt(t.Description, repoConfig, cfg.Tasks.TaskSuffix, exec.Command)
 
 		// Open vault if any env vars use vault:// references
-		var kdbxVault *vault.KDBXVault
+		var kdbxVault vault.Reader
 		if hasVaultRefs(ctrConfig.Env) {
 			dbPath := vault.DefaultVaultPath(homeDir)
 			keyFile := vault.DefaultKeyFile(homeDir)
@@ -291,17 +289,34 @@ var taskRunCmd = &cobra.Command{
 			sshHosts = append(sshHosts, host)
 		}
 
+		// Resolve auth profile to file + env vars
+		var authFile string
+		var authEnv map[string]string
+		if authProfile != "" {
+			if profile, ok := cfg.Claude.AuthProfiles[authProfile]; ok {
+				authFile = profile.AuthFile
+				authEnv = profile.Env
+			}
+		}
+
 		runner := task.NewRunner(store, exec.Command, runtime)
 		if err := runner.RunTask(t, task.RunOpts{
-			ContainerName:   containerName,
-			ContainerConfig: ctrConfig,
-			AuthProfile:     authProfile,
-			ClaudeConfig:    &cfg.Claude,
-			ProjectDir:      projectDir,
-			HomeDir:         homeDir,
-			Notify:          notifyEnabled,
-			Vault:           kdbxVault,
-			SSHHosts:        sshHosts,
+			Container: task.ContainerOpts{
+				Name:        containerName,
+				Image:       ctrConfig.Image,
+				Firewall:    ctrConfig.Firewall,
+				StartupCmds: ctrConfig.StartupCommands,
+				Mounts:      ctrConfig.Mounts,
+				Volumes:     ctrConfig.Volumes,
+				Env:         ctrConfig.Env,
+				HomeDir:     ctrConfig.HomeDir,
+			},
+			Auth:       task.AuthOpts{Profile: authProfile, File: authFile, Env: authEnv, ConfigDir: cfg.Claude.ConfigDir},
+			ProjectDir: projectDir,
+			HomeDir:    homeDir,
+			Notify:     notifyEnabled,
+			Vault:      kdbxVault,
+			SSHHosts:   sshHosts,
 		}); err != nil {
 			return err
 		}
@@ -632,7 +647,7 @@ var taskNextCmd = &cobra.Command{
 		t.Description = task.EnrichPrompt(t.Description, repoConfig, cfg.Tasks.TaskSuffix, exec.Command)
 
 		// Open vault if needed
-		var kdbxVault *vault.KDBXVault
+		var kdbxVault vault.Reader
 		if hasVaultRefs(ctrConfig.Env) {
 			dbPath := vault.DefaultVaultPath(homeDir)
 			keyFile := vault.DefaultKeyFile(homeDir)
@@ -651,17 +666,34 @@ var taskNextCmd = &cobra.Command{
 			sshHosts = append(sshHosts, host)
 		}
 
+		// Resolve auth profile to file + env vars
+		var authFile string
+		var authEnv map[string]string
+		if authProfile != "" {
+			if profile, ok := cfg.Claude.AuthProfiles[authProfile]; ok {
+				authFile = profile.AuthFile
+				authEnv = profile.Env
+			}
+		}
+
 		runner := task.NewRunner(store, exec.Command, runtime)
 		if err := runner.RunTask(t, task.RunOpts{
-			ContainerName:   containerName,
-			ContainerConfig: ctrConfig,
-			AuthProfile:     authProfile,
-			ClaudeConfig:    &cfg.Claude,
-			ProjectDir:      projectDir,
-			HomeDir:         homeDir,
-			Notify:          notifyEnabled,
-			Vault:           kdbxVault,
-			SSHHosts:        sshHosts,
+			Container: task.ContainerOpts{
+				Name:        containerName,
+				Image:       ctrConfig.Image,
+				Firewall:    ctrConfig.Firewall,
+				StartupCmds: ctrConfig.StartupCommands,
+				Mounts:      ctrConfig.Mounts,
+				Volumes:     ctrConfig.Volumes,
+				Env:         ctrConfig.Env,
+				HomeDir:     ctrConfig.HomeDir,
+			},
+			Auth:       task.AuthOpts{Profile: authProfile, File: authFile, Env: authEnv, ConfigDir: cfg.Claude.ConfigDir},
+			ProjectDir: projectDir,
+			HomeDir:    homeDir,
+			Notify:     notifyEnabled,
+			Vault:      kdbxVault,
+			SSHHosts:   sshHosts,
 		}); err != nil {
 			return err
 		}

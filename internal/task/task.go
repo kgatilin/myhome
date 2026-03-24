@@ -29,16 +29,8 @@ const (
 	StageStatusComplete StageStatus = "complete"
 )
 
-// Task represents a tracked unit of work.
-type Task struct {
-	ID          int        `yaml:"id"`
-	Type        TaskType   `yaml:"type"`
-	Domain      string     `yaml:"domain,omitempty"`
-	Description string     `yaml:"description"`
-	Status      TaskStatus `yaml:"status"`
-	CreatedAt   time.Time  `yaml:"created_at"`
-	DoneAt      *time.Time `yaml:"done_at,omitempty"`
-	// Run task fields
+// RunState holds run-specific fields for a task.
+type RunState struct {
 	Repo         string `yaml:"repo,omitempty"`
 	Branch       string `yaml:"branch,omitempty"`
 	ContainerID  string `yaml:"container_id,omitempty"`
@@ -48,8 +40,24 @@ type Task struct {
 	LogFile      string `yaml:"log_file,omitempty"`
 	Iterations   int    `yaml:"iterations,omitempty"`
 	ExitCode     *int   `yaml:"exit_code,omitempty"`
-	// Workflow fields
-	Stage          string            `yaml:"stage,omitempty"`           // current workflow stage name
-	StageStatus    StageStatus       `yaml:"stage_status,omitempty"`    // pending, running, complete
-	WorkflowParams map[string]string `yaml:"workflow_params,omitempty"` // params for prompt interpolation
+}
+
+// WorkflowState holds workflow stage tracking fields for a task.
+type WorkflowState struct {
+	Stage          string            `yaml:"stage,omitempty"`
+	StageStatus    StageStatus       `yaml:"stage_status,omitempty"`
+	WorkflowParams map[string]string `yaml:"workflow_params,omitempty"`
+}
+
+// Task represents a tracked unit of work.
+type Task struct {
+	ID          int        `yaml:"id"`
+	Type        TaskType   `yaml:"type"`
+	Domain      string     `yaml:"domain,omitempty"`
+	Description string     `yaml:"description"`
+	Status      TaskStatus `yaml:"status"`
+	CreatedAt   time.Time  `yaml:"created_at"`
+	DoneAt      *time.Time `yaml:"done_at,omitempty"`
+	RunState      `yaml:",inline"`
+	WorkflowState `yaml:",inline"`
 }

@@ -13,11 +13,12 @@ import (
 
 // RunOpts holds options for running a container.
 type RunOpts struct {
-	AuthProfile    *config.AuthProfile
+	AuthFile        string            // resolved auth file path (empty = no auth)
+	AuthEnv         map[string]string // env vars from auth profile
 	ClaudeConfigDir string
-	ProjectDir     string
-	Detach         bool
-	ExtraArgs      []string
+	ProjectDir      string
+	Detach          bool
+	ExtraArgs       []string
 }
 
 // ContainerInfo represents a running or stopped container from ps output.
@@ -158,8 +159,8 @@ func RunArgs(name string, ctr config.Container, homeDir string, opts RunOpts) []
 	}
 
 	// Auth profile mounts and env vars.
-	if opts.AuthProfile != nil {
-		authMounts, authEnvs := ResolveAuth(*opts.AuthProfile, opts.ClaudeConfigDir, homeDir)
+	if opts.AuthFile != "" {
+		authMounts, authEnvs := ResolveAuth(opts.AuthFile, opts.AuthEnv, opts.ClaudeConfigDir, homeDir)
 		for _, m := range authMounts {
 			args = append(args, "-v", m)
 		}

@@ -177,7 +177,7 @@ func (v *KDBXVault) GetAttachment(entryName, attachmentName string) ([]byte, err
 
 // ResolveVaultRef resolves a "vault://<entry>" reference to its secret value.
 // Returns the original string unchanged if it doesn't have the vault:// prefix.
-func ResolveVaultRef(ref string, v *KDBXVault) (string, error) {
+func ResolveVaultRef(ref string, v Reader) (string, error) {
 	if !strings.HasPrefix(ref, "vault://") {
 		return ref, nil
 	}
