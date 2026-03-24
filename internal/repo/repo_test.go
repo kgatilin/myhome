@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgatilin/myhome/internal/config"
@@ -65,6 +66,35 @@ func TestSync(t *testing.T) {
 	// Sync again — should be a no-op
 	if err := Sync(env, homeDir); err != nil {
 		t.Fatalf("Sync() second call error: %v", err)
+	}
+}
+
+func TestSyncContinuesOnError(t *testing.T) {
+	homeDir := t.TempDir()
+
+	// Create a bare repo that can actually be cloned
+	bareRepo := filepath.Join(t.TempDir(), "good.git")
+	if err := exec.Command("git", "init", "--bare", bareRepo).Run(); err != nil {
+		t.Fatalf("create bare repo: %v", err)
+	}
+
+	env := &config.ResolvedEnv{
+		Repos: []config.Repo{
+			{Path: "bad/repo", URL: "/nonexistent/path.git", Env: "base"},
+			{Path: "good/repo", URL: bareRepo, Env: "base"},
+		},
+	}
+
+	err := Sync(env, homeDir)
+	if err == nil {
+		t.Fatal("Sync() should return error for failed clone")
+	}
+	if !strings.Contains(err.Error(), "bad/repo") {
+		t.Errorf("error should mention bad/repo, got: %v", err)
+	}
+	// Good repo should still be cloned despite the earlier failure
+	if !isGitRepo(filepath.Join(homeDir, "good/repo")) {
+		t.Error("good/repo should be cloned even when bad/repo fails")
 	}
 }
 
