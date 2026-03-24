@@ -149,6 +149,12 @@ Run `archlint collect . -l go -o architecture.yaml` to generate a full architect
 - Container configs in myhome.yml must include `startup_commands` with a `{{.Prompt}}` template variable. The task runner renders this but does not add its own command. Example: `"exec claude --dangerously-skip-permissions --output-format text -p {{.Prompt}}"`
 - `dependencies_go.txt` supports a `source:` prefix for packages that can't be `go install`ed (e.g. module path mismatches). Format: `source:github.com/user/repo cmd/tool` — triggers git clone + go build instead of go install. Use `go_deps_file:` in container config to install at build time (required for firewalled containers).
 
+### Agent Runtime (deskd)
+
+Agent orchestration is handled by a separate Rust project: [deskd](https://github.com/kira-autonoma/deskd).
+myhome manages workspace (repos, tools, auth), deskd manages agents (lifecycle, routing, context, cost).
+See `docs/deskd-integration.md` for full architecture, domain model, and data access patterns.
+
 ### Dependencies
 
 - `github.com/spf13/cobra` — CLI framework
