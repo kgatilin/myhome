@@ -66,12 +66,23 @@ func gitPull(dir string) error {
 }
 
 func goBuild(sourceDir, output string) error {
-	cmd := exec.Command("go", "build", "-o", output, "./cmd/myhome/")
+	// Get git commit for version stamp
+	version := gitVersion(sourceDir)
+	ldflags := fmt.Sprintf("-X github.com/kgatilin/myhome/internal/cmd.Version=%s", version)
+	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", output, "./cmd/myhome/")
 	cmd.Dir = sourceDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = envWithMiseShims()
 	return cmd.Run()
+}
+
+func gitVersion(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%h").Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func replaceBinary(src, dst string) error {

@@ -4,10 +4,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is set at build time via -ldflags.
+var Version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "myhome",
-	Short: "Personal workspace manager",
-	Long:  "Manage your home folder: repos, environments, tools, packages, auth, agent users.",
+	Use:     "myhome",
+	Short:   "Personal workspace manager",
+	Long:    "Manage your home folder: repos, environments, tools, packages, auth, agent users.",
+	Version: Version,
 }
 
 func Execute() error {
