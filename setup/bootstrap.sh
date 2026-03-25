@@ -8,7 +8,7 @@ set -euo pipefail
 ENV="${1:-full}"
 MYHOME_REPO="${MYHOME_REPO:-git@github.com:kgatilin/myhome.git}"
 MYHOME_SRC="${HOME}/dev/tools/myhome"
-MYHOME_BIN="${HOME}/go/bin/myhome"
+MYHOME_BIN="/usr/local/bin/myhome"
 
 info() { printf "==> %s\n" "$1"; }
 
@@ -51,13 +51,30 @@ fi
 
 # Step 4: Build myhome
 info "Building myhome..."
-mkdir -p "$(dirname "${MYHOME_BIN}")"
 (cd "${MYHOME_SRC}" && go build -o "${MYHOME_BIN}" ./cmd/myhome)
 
-# Ensure go/bin is on PATH
-export PATH="${HOME}/go/bin:${PATH}"
+# Step 5: Ensure ~/.local/bin is in PATH for non-interactive SSH sessions
+LOCAL_BIN="${HOME}/.local/bin"
+if [[ -f /etc/environment ]]; then
+    if ! grep -q "${LOCAL_BIN}" /etc/environment 2>/dev/null; then
+        info "Adding ${LOCAL_BIN} to /etc/environment..."
+        if [[ -s /etc/environment ]]; then
+            # Append to existing PATH or add new PATH entry
+            if grep -q '^PATH=' /etc/environment; then
+                sudo sed -i "s|^PATH=\"\\(.*\\)\"|PATH=\"${LOCAL_BIN}:\\1\"|" /etc/environment
+            else
+                echo "PATH=\"${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin\"" | sudo tee -a /etc/environment >/dev/null
+            fi
+        else
+            echo "PATH=\"${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin\"" | sudo tee /etc/environment >/dev/null
+        fi
+    fi
+else
+    info "Creating /etc/environment with ${LOCAL_BIN} in PATH..."
+    echo "PATH=\"${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin\"" | sudo tee /etc/environment >/dev/null
+fi
 
-# Step 5: Run myhome init
+# Step 6: Run myhome init
 info "Running myhome init --env ${ENV}..."
 myhome init --env "${ENV}"
 

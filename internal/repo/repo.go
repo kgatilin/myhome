@@ -189,7 +189,24 @@ func runShell(command, dir string) error {
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = envWithMiseShims()
 	return cmd.Run()
+}
+
+// envWithMiseShims returns the current environment with mise shims prepended to PATH,
+// so build commands can find mise-managed tools (go, cargo, node, etc.).
+func envWithMiseShims() []string {
+	home, _ := os.UserHomeDir()
+	shimsDir := filepath.Join(home, ".local", "share", "mise", "shims")
+	env := os.Environ()
+	for i, e := range env {
+		if val, ok := strings.CutPrefix(e, "PATH="); ok {
+			env[i] = "PATH=" + shimsDir + string(os.PathListSeparator) + val
+			return env
+		}
+	}
+	// No PATH found — set one
+	return append(env, "PATH="+shimsDir)
 }
 
 func isGitRepo(path string) bool {
