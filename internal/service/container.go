@@ -140,7 +140,19 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	}
 	args = append(args, shell, "-c", fmt.Sprintf("exec %s", serviceCommand))
 
-	return strings.Join(args, " "), nil
+	return shellJoin(args), nil
+}
+
+// shellJoin quotes arguments that contain spaces or special characters.
+func shellJoin(args []string) string {
+	var quoted []string
+	for _, a := range args {
+		if strings.ContainsAny(a, " \t'\"$`\\!") {
+			a = "'" + strings.ReplaceAll(a, "'", "'\\''") + "'"
+		}
+		quoted = append(quoted, a)
+	}
+	return strings.Join(quoted, " ")
 }
 
 func expandHome(path, homeDir string) string {
