@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kgatilin/myhome/internal/adapter/github"
+	"github.com/kgatilin/myhome/internal/adapter/telegram"
 	"github.com/kgatilin/myhome/internal/config"
 )
 
@@ -105,6 +106,58 @@ var adapterGitHubStatusCmd = &cobra.Command{
 	},
 }
 
+var adapterTelegramCmd = &cobra.Command{
+	Use:   "telegram",
+	Short: "Telegram bot adapter",
+}
+
+var adapterTelegramStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start the Telegram bot adapter",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfgPath, err := config.DefaultConfigPath()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.Load(cfgPath)
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		tgCfg := cfg.Adapters.Telegram
+		if tgCfg == nil {
+			tgCfg = &config.TelegramAdapterConfig{}
+		}
+
+		// Apply flag overrides.
+		if socket, _ := cmd.Flags().GetString("socket"); socket != "" {
+			tgCfg.BusSocket = socket
+		}
+		if token, _ := cmd.Flags().GetString("token"); token != "" {
+			tgCfg.Token = token
+		}
+
+		// Defaults.
+		if tgCfg.BusSocket == "" {
+			tgCfg.BusSocket = "/tmp/deskd.sock"
+		}
+		if tgCfg.DefaultTarget == "" {
+			tgCfg.DefaultTarget = "agent:dev"
+		}
+
+		if tgCfg.Token == "" {
+			return fmt.Errorf("telegram bot token not configured (set adapters.telegram.token in myhome.yml or use --token)")
+		}
+
+		bus := telegram.NewBusClient(tgCfg.BusSocket)
+		bot := telegram.NewBot(tgCfg, bus)
+
+		fmt.Fprintf(os.Stderr, "Starting Telegram adapter: socket=%s\n", tgCfg.BusSocket)
+
+		return bot.Run()
+	},
+}
+
 func init() {
 	adapterGitHubStartCmd.Flags().Duration("interval", 0, "Poll interval (overrides config)")
 	adapterGitHubStartCmd.Flags().String("socket", "", "Bus socket path (overrides config)")
@@ -112,4 +165,10 @@ func init() {
 	adapterGitHubCmd.AddCommand(adapterGitHubStartCmd)
 	adapterGitHubCmd.AddCommand(adapterGitHubStatusCmd)
 	adapterCmd.AddCommand(adapterGitHubCmd)
+
+	adapterTelegramStartCmd.Flags().String("socket", "", "Bus socket path (overrides config)")
+	adapterTelegramStartCmd.Flags().String("token", "", "Bot token (overrides config)")
+
+	adapterTelegramCmd.AddCommand(adapterTelegramStartCmd)
+	adapterCmd.AddCommand(adapterTelegramCmd)
 }

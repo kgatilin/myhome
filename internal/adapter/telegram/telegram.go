@@ -1,0 +1,314 @@
+// Package telegram implements a Telegram Bot API adapter that routes messages
+// from Telegram chats to agents on the deskd message bus.
+package telegram
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/kgatilin/myhome/internal/config"
+)
+
+// Update represents a Telegram Bot API Update object.
+type Update struct {
+	UpdateID int      `json:"update_id"`
+	Message  *Message `json:"message"`
+}
+
+// Message represents a Telegram Bot API Message object.
+type Message struct {
+	MessageID int    `json:"message_id"`
+	Text      string `json:"text"`
+	Chat      Chat   `json:"chat"`
+	From      User   `json:"from"`
+}
+
+// Chat represents a Telegram chat.
+type Chat struct {
+	ID       int64  `json:"id"`
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Username string `json:"username"`
+}
+
+// User represents a Telegram user.
+type User struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+}
+
+// Bot is the Telegram polling adapter.
+type Bot struct {
+	cfg    *config.TelegramAdapterConfig
+	bus    *BusClient
+	client *http.Client
+	offset int
+}
+
+// NewBot creates a new Telegram bot adapter.
+func NewBot(cfg *config.TelegramAdapterConfig, bus *BusClient) *Bot {
+	return &Bot{
+		cfg:    cfg,
+		bus:    bus,
+		client: &http.Client{Timeout: 35 * time.Second},
+	}
+}
+
+// Run starts the bot polling loop. Blocks until an error occurs.
+func (b *Bot) Run() error {
+	token, err := b.resolveToken()
+	if err != nil {
+		return fmt.Errorf("resolve token: %w", err)
+	}
+	b.cfg.Token = token
+
+	if err := b.bus.Connect(); err != nil {
+		return fmt.Errorf("bus connect: %w", err)
+	}
+	defer b.bus.Close()
+
+	// Forward bus replies to Telegram.
+	go b.replyLoop()
+
+	mode := "discovery"
+	if len(b.cfg.Routes) > 0 {
+		mode = fmt.Sprintf("restricted (%d routes)", len(b.cfg.Routes))
+	}
+	log.Printf("telegram adapter started, mode=%s, socket=%s", mode, b.cfg.BusSocket)
+
+	for {
+		updates, err := b.getUpdates()
+		if err != nil {
+			log.Printf("getUpdates error: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		for _, u := range updates {
+			b.handleUpdate(u)
+		}
+	}
+}
+
+// resolveToken resolves the bot token, supporting vault:// prefix.
+func (b *Bot) resolveToken() (string, error) {
+	token := b.cfg.Token
+	if token == "" {
+		return "", fmt.Errorf("telegram bot token not configured")
+	}
+
+	if strings.HasPrefix(token, "vault://") {
+		key := strings.TrimPrefix(token, "vault://")
+		out, err := exec.Command("myhome", "vault", "get", key).Output()
+		if err != nil {
+			return "", fmt.Errorf("vault get %s: %w", key, err)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	return token, nil
+}
+
+// getUpdates calls the Telegram Bot API getUpdates endpoint with long polling.
+func (b *Bot) getUpdates() ([]Update, error) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=30", b.cfg.Token, b.offset)
+	resp, err := b.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("http get: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	var result struct {
+		OK     bool     `json:"ok"`
+		Result []Update `json:"result"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	if !result.OK {
+		return nil, fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	if len(result.Result) > 0 {
+		b.offset = result.Result[len(result.Result)-1].UpdateID + 1
+	}
+
+	return result.Result, nil
+}
+
+// handleUpdate processes a single Telegram update.
+func (b *Bot) handleUpdate(u Update) {
+	if u.Message == nil || u.Message.Text == "" {
+		return
+	}
+
+	msg := u.Message
+
+	// /info always works regardless of routing.
+	if msg.Text == "/info" {
+		b.handleInfo(msg)
+		return
+	}
+
+	// /help always works regardless of routing.
+	if msg.Text == "/help" {
+		b.handleHelp(msg)
+		return
+	}
+
+	// Check routing.
+	target, ok := b.resolveTarget(msg)
+	if !ok {
+		return // silently ignore unlisted chats in restricted mode
+	}
+
+	// Post to bus.
+	busMsg := BusMessage{
+		Type:   "message",
+		ID:     fmt.Sprintf("telegram-%d-%d-%d", msg.Chat.ID, msg.MessageID, time.Now().UnixMilli()),
+		Source: fmt.Sprintf("telegram:%d", msg.Chat.ID),
+		Target: target,
+		Payload: map[string]any{
+			"task":     msg.Text,
+			"chat_id":  msg.Chat.ID,
+			"user_id":  msg.From.ID,
+			"username": msg.From.Username,
+		},
+		Metadata: map[string]any{
+			"priority": 5,
+		},
+	}
+
+	if err := b.bus.Publish(busMsg); err != nil {
+		log.Printf("bus publish error: %v", err)
+		return
+	}
+	log.Printf("posted message from chat %d (user %s) to %s", msg.Chat.ID, msg.From.Username, target)
+}
+
+// resolveTarget determines which agent should receive the message.
+// Returns the target and whether the message should be processed.
+func (b *Bot) resolveTarget(msg *Message) (string, bool) {
+	// Discovery mode: no routes configured, accept all chats.
+	if len(b.cfg.Routes) == 0 {
+		return b.cfg.DefaultTarget, true
+	}
+
+	// Restricted mode: only process messages from configured chats.
+	for _, route := range b.cfg.Routes {
+		if route.ChatID == msg.Chat.ID {
+			if route.OwnerOnly && msg.From.ID != b.cfg.OwnerID {
+				return "", false
+			}
+			target := route.Target
+			if target == "" {
+				target = b.cfg.DefaultTarget
+			}
+			return target, true
+		}
+	}
+
+	return "", false
+}
+
+// handleInfo responds with chat and user information.
+func (b *Bot) handleInfo(msg *Message) {
+	text := fmt.Sprintf("chat_id: %d\nuser_id: %d\nchat_type: %s\nusername: %s",
+		msg.Chat.ID, msg.From.ID, msg.Chat.Type, msg.From.Username)
+	if err := b.sendMessage(msg.Chat.ID, text); err != nil {
+		log.Printf("send /info reply: %v", err)
+	}
+}
+
+// handleHelp responds with available commands.
+func (b *Bot) handleHelp(msg *Message) {
+	text := "Available commands:\n/info — show chat_id, user_id, chat_type, username\n/help — list available commands\n\nAll other messages are routed to agents via the message bus."
+	if err := b.sendMessage(msg.Chat.ID, text); err != nil {
+		log.Printf("send /help reply: %v", err)
+	}
+}
+
+// sendMessage sends a text message to a Telegram chat.
+func (b *Bot) sendMessage(chatID int64, text string) error {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", b.cfg.Token)
+
+	payload := map[string]any{
+		"chat_id": chatID,
+		"text":    text,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal sendMessage payload: %w", err)
+	}
+
+	resp, err := b.client.Post(url, "application/json", strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("sendMessage http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("sendMessage status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// replyLoop listens for bus replies and sends them back to Telegram.
+func (b *Bot) replyLoop() {
+	for reply := range b.bus.Replies() {
+		// Extract chat_id from source field (format: "telegram:<chat_id>")
+		// Reply target should match the original source.
+		chatID, err := parseChatIDFromTarget(reply.Target)
+		if err != nil {
+			log.Printf("reply: cannot parse chat_id from target %q: %v", reply.Target, err)
+			continue
+		}
+
+		text := extractReplyText(reply.Payload)
+		if text == "" {
+			continue
+		}
+
+		if err := b.sendMessage(chatID, text); err != nil {
+			log.Printf("send reply to chat %d: %v", chatID, err)
+		}
+	}
+}
+
+// parseChatIDFromTarget extracts chat_id from a target like "telegram:12345".
+func parseChatIDFromTarget(target string) (int64, error) {
+	if !strings.HasPrefix(target, "telegram:") {
+		return 0, fmt.Errorf("not a telegram target: %s", target)
+	}
+	var chatID int64
+	_, err := fmt.Sscanf(strings.TrimPrefix(target, "telegram:"), "%d", &chatID)
+	return chatID, err
+}
+
+// extractReplyText gets text from a reply payload.
+func extractReplyText(payload any) string {
+	switch p := payload.(type) {
+	case string:
+		return p
+	case map[string]any:
+		if text, ok := p["text"].(string); ok {
+			return text
+		}
+		if text, ok := p["task"].(string); ok {
+			return text
+		}
+	}
+	return ""
+}
