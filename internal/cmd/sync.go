@@ -81,10 +81,22 @@ var syncCmd = &cobra.Command{
 		}
 
 		if doRepos {
+			// Stop services before rebuilding binaries to avoid "text file busy"
+			fmt.Println("==> Stopping services for rebuild")
+			if err := stopAllServices(); err != nil {
+				fmt.Printf("Warning: stopping services failed: %v (continuing)\n", err)
+			}
+
 			fmt.Println("==> Repo sync")
 			if err := runRepoSync(); err != nil {
 				fmt.Printf("Warning: repo sync failed: %v (continuing)\n", err)
 			}
+
+			fmt.Println("==> Restarting services")
+			if err := runServiceStart(); err != nil {
+				fmt.Printf("Warning: service start failed: %v (continuing)\n", err)
+			}
+			doServices = false // already handled
 		}
 
 		if doServices {
@@ -145,6 +157,19 @@ func runRepoSync() error {
 		return err
 	}
 	return repo.Sync(env, homeDir)
+}
+
+func stopAllServices() error {
+	cfgPath, err := config.DefaultConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	plat, _ := platform.Detect()
+	return service.StopAll(cfg.Services, plat)
 }
 
 func runServiceStart() error {
