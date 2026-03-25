@@ -289,8 +289,10 @@ func (b *Bot) replyLoop() {
 
 		text := extractReplyText(reply.Payload)
 		if text == "" {
+			log.Printf("reply: empty text extracted from payload: %+v (type: %T)", reply.Payload, reply.Payload)
 			continue
 		}
+		log.Printf("reply: sending to chat %d: %s", chatID, text[:min(len(text), 80)])
 
 		if err := b.sendMessage(chatID, text); err != nil {
 			log.Printf("send reply to chat %d: %v", chatID, err)
