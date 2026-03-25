@@ -157,6 +157,8 @@ func generateSystemdUnit(name, command, username string, restart bool) string {
 	if restart {
 		restartPolicy = "always"
 	}
+	homeDir, _ := os.UserHomeDir()
+	binPath := fmt.Sprintf("%s/.local/bin:%s/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin", homeDir, homeDir)
 	return fmt.Sprintf(`[Unit]
 Description=myhome %s service
 After=network.target
@@ -164,10 +166,12 @@ After=network.target
 [Service]
 Type=simple
 User=%s
+Environment=PATH=%s
+Environment=HOME=%s
 ExecStart=/bin/sh -c '%s'
 Restart=%s
 
 [Install]
 WantedBy=multi-user.target
-`, name, username, command, restartPolicy)
+`, name, username, binPath, homeDir, command, restartPolicy)
 }

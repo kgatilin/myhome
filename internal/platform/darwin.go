@@ -168,12 +168,19 @@ func generateLaunchdPlist(name, command, username string, restart bool) string {
 	if restart {
 		keepAlive = "true"
 	}
+	homeDir, _ := os.UserHomeDir()
+	binPath := fmt.Sprintf("%s/.local/bin:%s/go/bin:/usr/local/bin:/usr/bin:/bin", homeDir, homeDir)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.myhome.%s</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>%s</string>
+    </dict>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/sh</string>
@@ -191,5 +198,5 @@ func generateLaunchdPlist(name, command, username string, restart bool) string {
     <key>StandardErrorPath</key>
     <string>/tmp/com.myhome.%s.err.log</string>
 </dict>
-</plist>`, name, command, username, keepAlive, name, name)
+</plist>`, name, binPath, command, username, keepAlive, name, name)
 }
