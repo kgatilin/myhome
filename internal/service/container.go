@@ -32,12 +32,8 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 		containerHome = "/home/node"
 	}
 
-	// Run as the host user so mounted volumes are writable.
-	// Set HOME to containerHome so tools find configs at the right path.
-	u, _ := user.Current()
-	if u != nil {
-		args = append(args, "--user", u.Uid+":"+u.Gid, "-e", "HOME="+containerHome)
-	}
+	// Don't override --user — let container run as its default user (e.g. node/1000).
+	// Claude CLI refuses --dangerously-skip-permissions when running as root.
 
 	// Firewall: use host network + NET_ADMIN caps
 	if ctrCfg.Firewall {
