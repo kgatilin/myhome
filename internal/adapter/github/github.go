@@ -118,18 +118,20 @@ func (p *Poller) listIssues(repo string) ([]Issue, error) {
 
 // postIssue sends an issue to the deskd bus.
 func (p *Poller) postIssue(repo string, issue Issue) error {
-	payload := fmt.Sprintf("Issue #%d: %s\n\n%s", issue.Number, issue.Title, issue.Body)
+	task := fmt.Sprintf("Issue #%d: %s\n\n%s", issue.Number, issue.Title, issue.Body)
 	msg := BusMessage{
-		Type:    "message",
-		ID:      fmt.Sprintf("github-%s-%d-%d", repo, issue.Number, time.Now().UnixMilli()),
-		Source:  fmt.Sprintf("github:%s", repo),
-		Target:  p.cfg.DefaultTarget,
-		Payload: payload,
-		Metadata: map[string]any{
-			"priority":     5,
+		Type:   "message",
+		ID:     fmt.Sprintf("github-%s-%d-%d", repo, issue.Number, time.Now().UnixMilli()),
+		Source: fmt.Sprintf("github:%s", repo),
+		Target: p.cfg.DefaultTarget,
+		Payload: map[string]any{
+			"task":         task,
 			"issue_number": issue.Number,
 			"issue_url":    issue.URL,
 			"repo":         repo,
+		},
+		Metadata: map[string]any{
+			"priority": 5,
 		},
 	}
 	return p.bus.Publish(msg)
