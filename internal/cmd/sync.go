@@ -8,25 +8,29 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kgatilin/myhome/internal/config"
+	"github.com/kgatilin/myhome/internal/platform"
 	"github.com/kgatilin/myhome/internal/repo"
 	"github.com/kgatilin/myhome/internal/selfupdate"
+	"github.com/kgatilin/myhome/internal/service"
 	"github.com/kgatilin/myhome/internal/tools"
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Run full sync pipeline (self-update, tools, repos)",
-	Long:  "Run the full myhome sync pipeline: rebuild own binary, install dev runtimes, clone and build repos.\nUse --self, --tools, --repos to run only specific steps.",
+	Short: "Run full sync pipeline (self-update, tools, repos, services)",
+	Long:  "Run the full myhome sync pipeline: pull config, rebuild binary, install tools, clone/build repos, start services.\nUse flags to run only specific steps.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		doSelf, _ := cmd.Flags().GetBool("self")
 		doTools, _ := cmd.Flags().GetBool("tools")
 		doRepos, _ := cmd.Flags().GetBool("repos")
+		doServices, _ := cmd.Flags().GetBool("services")
 
 		// Default: run all steps if no flags specified
-		if !doSelf && !doTools && !doRepos {
+		if !doSelf && !doTools && !doRepos && !doServices {
 			doSelf = true
 			doTools = true
 			doRepos = true
+			doServices = true
 		}
 
 		// Step 0: pull home repo to get latest config
@@ -38,21 +42,28 @@ var syncCmd = &cobra.Command{
 		if doSelf {
 			fmt.Println("==> Self-update")
 			if err := runSelfUpdate(); err != nil {
-				return fmt.Errorf("self-update: %w", err)
+				fmt.Printf("Warning: self-update failed: %v (continuing)\n", err)
 			}
 		}
 
 		if doTools {
 			fmt.Println("==> Tools sync")
 			if err := runToolsSync(); err != nil {
-				return fmt.Errorf("tools sync: %w", err)
+				fmt.Printf("Warning: tools sync failed: %v (continuing)\n", err)
 			}
 		}
 
 		if doRepos {
 			fmt.Println("==> Repo sync")
 			if err := runRepoSync(); err != nil {
-				return fmt.Errorf("repo sync: %w", err)
+				fmt.Printf("Warning: repo sync failed: %v (continuing)\n", err)
+			}
+		}
+
+		if doServices {
+			fmt.Println("==> Starting services")
+			if err := runServiceStart(); err != nil {
+				fmt.Printf("Warning: service start failed: %v (continuing)\n", err)
 			}
 		}
 
@@ -109,6 +120,19 @@ func runRepoSync() error {
 	return repo.Sync(env, homeDir)
 }
 
+func runServiceStart() error {
+	cfgPath, err := config.DefaultConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	plat, _ := platform.Detect()
+	return service.StartAll(cfg.Services, plat)
+}
+
 func pullHomeRepo() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -124,4 +148,5 @@ func init() {
 	syncCmd.Flags().Bool("self", false, "Only run self-update step")
 	syncCmd.Flags().Bool("tools", false, "Only run tools sync step")
 	syncCmd.Flags().Bool("repos", false, "Only run repo sync step")
+	syncCmd.Flags().Bool("services", false, "Only run service start step")
 }
