@@ -26,6 +26,12 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 
 	args := []string{runtime, "run", "--rm", "--name", containerName}
 
+	// Run as the host user so mounted volumes are writable
+	u, _ := user.Current()
+	if u != nil {
+		args = append(args, "--user", u.Uid+":"+u.Gid)
+	}
+
 	// Firewall: use host network + NET_ADMIN caps
 	if ctrCfg.Firewall {
 		args = append(args,
