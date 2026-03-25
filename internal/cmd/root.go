@@ -33,4 +33,5 @@ func init() {
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(adapterCmd)
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(selfUpdateCmd)
 }
