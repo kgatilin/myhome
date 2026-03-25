@@ -38,6 +38,7 @@ tools:
     python: "3.11"
   personal:
     node: "20"
+    rust: "latest"
 
 packages:
   base:
@@ -167,12 +168,23 @@ func TestFullConfigRoundTrip(t *testing.T) {
 		t.Errorf("work python tool = %q, want 3.11", work.Tools["python"])
 	}
 
+	personal, err := cfg.ResolveEnv("personal")
+	if err != nil {
+		t.Fatalf("ResolveEnv(personal) error: %v", err)
+	}
+	if personal.Tools["rust"] != "latest" {
+		t.Errorf("personal rust tool = %q, want latest", personal.Tools["rust"])
+	}
+
 	full, err := cfg.ResolveEnv("full")
 	if err != nil {
 		t.Fatalf("ResolveEnv(full) error: %v", err)
 	}
 	if len(full.Repos) != 3 {
 		t.Errorf("full repos = %d, want 3", len(full.Repos))
+	}
+	if full.Tools["rust"] != "latest" {
+		t.Errorf("full rust tool = %q, want latest", full.Tools["rust"])
 	}
 
 	// Round-trip: save and reload.

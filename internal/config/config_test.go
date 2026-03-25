@@ -39,6 +39,7 @@ tools:
     terraform: "1.7"
   personal:
     node: "20"
+    rust: "latest"
 
 packages:
   base:
@@ -153,8 +154,8 @@ func TestResolveEnv(t *testing.T) {
 	}{
 		{"base", 1, []string{"go"}, 3},
 		{"work", 2, []string{"go", "python", "terraform"}, 5},
-		{"personal", 2, []string{"go", "node"}, 3},
-		{"full", 3, []string{"go", "python", "terraform", "node"}, 5},
+		{"personal", 2, []string{"go", "node", "rust"}, 3},
+		{"full", 3, []string{"go", "python", "terraform", "node", "rust"}, 5},
 	}
 
 	for _, tt := range tests {

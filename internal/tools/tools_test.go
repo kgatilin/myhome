@@ -12,6 +12,7 @@ func TestGenerateMiseToml(t *testing.T) {
 		"go":     "1.26",
 		"python": "3.11",
 		"node":   "20",
+		"rust":   "latest",
 	}
 	content := GenerateMiseToml(tools)
 
@@ -26,6 +27,9 @@ func TestGenerateMiseToml(t *testing.T) {
 	}
 	if !strings.Contains(content, `python = "3.11"`) {
 		t.Error("missing python tool")
+	}
+	if !strings.Contains(content, `rust = "latest"`) {
+		t.Error("missing rust tool")
 	}
 }
 
@@ -62,6 +66,27 @@ func TestWriteMiseToml(t *testing.T) {
 		t.Fatalf("read .mise.toml: %v", err)
 	}
 	if !strings.Contains(string(data), `go = "1.26"`) {
+		t.Error("written file missing go tool")
+	}
+}
+
+func TestWriteMiseTomlWithRust(t *testing.T) {
+	homeDir := t.TempDir()
+	tools := map[string]string{"go": "1.26", "rust": "latest"}
+
+	if err := WriteMiseToml(tools, homeDir); err != nil {
+		t.Fatalf("WriteMiseToml() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(homeDir, ".mise.toml"))
+	if err != nil {
+		t.Fatalf("read .mise.toml: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `rust = "latest"`) {
+		t.Error("written file missing rust tool")
+	}
+	if !strings.Contains(content, `go = "1.26"`) {
 		t.Error("written file missing go tool")
 	}
 }
