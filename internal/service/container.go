@@ -72,15 +72,17 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	}
 	args = append(args, "-v", busSocket+":"+busSocket)
 
-	// Mount only this agent's deskd state file (not all agents)
-	deskdAgentFile := filepath.Join(homeDir, ".deskd", "agents", name+".yaml")
-	args = append(args, "-v", deskdAgentFile+":"+deskdAgentFile+":ro")
-
 	// Container home dir
 	containerHome := ctrCfg.HomeDir
 	if containerHome == "" {
 		containerHome = "/home/node"
 	}
+
+	// Mount only this agent's deskd state file (not all agents)
+	// Map host path to container home equivalent
+	deskdHostFile := filepath.Join(homeDir, ".deskd", "agents", name+".yaml")
+	deskdContainerFile := filepath.Join(containerHome, ".deskd", "agents", name+".yaml")
+	args = append(args, "-v", deskdHostFile+":"+deskdContainerFile+":ro")
 
 	// Mount Claude config + auth
 	claudeConfigDir := "~/.claude"
