@@ -75,6 +75,7 @@ var staticRules = []string{
 	".azure/",
 	"",
 	"# Secrets and credentials (never track)",
+	".vault-password",
 	".secrets/",
 	".ssh/id_*",
 	".ssh/known_hosts",

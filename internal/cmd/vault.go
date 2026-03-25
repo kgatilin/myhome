@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -233,8 +234,35 @@ func init() {
 	vaultCmd.AddCommand(vaultListCmd)
 }
 
-// promptPassword reads a password from the terminal with echo disabled.
+// promptPassword resolves the vault master password. Checks in order:
+// 1. MYHOME_VAULT_PASSWORD env var
+// 2. ~/.vault-password file (must be chmod 600)
+// 3. Interactive terminal prompt (fallback)
 func promptPassword(prompt string) (string, error) {
+	// Check env var
+	if pw := os.Getenv("MYHOME_VAULT_PASSWORD"); pw != "" {
+		return pw, nil
+	}
+
+	// Check password file
+	homeDir, _ := os.UserHomeDir()
+	pwFile := homeDir + "/.vault-password"
+	if info, err := os.Stat(pwFile); err == nil {
+		// Verify permissions (owner-only)
+		if info.Mode().Perm()&0o077 != 0 {
+			return "", fmt.Errorf("%s has insecure permissions %o (must be 600)", pwFile, info.Mode().Perm())
+		}
+		data, err := os.ReadFile(pwFile)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", pwFile, err)
+		}
+		pw := strings.TrimSpace(string(data))
+		if pw != "" {
+			return pw, nil
+		}
+	}
+
+	// Interactive fallback
 	fmt.Print(prompt)
 	fd := int(os.Stdin.Fd())
 	password, err := term.ReadPassword(fd)
