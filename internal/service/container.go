@@ -35,12 +35,20 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 		)
 	}
 
+	// Container home dir
+	containerHome := ctrCfg.HomeDir
+	if containerHome == "" {
+		containerHome = "/home/node"
+	}
+
 	// Container config mounts
 	for _, mount := range container.ResolveMounts(ctrCfg.Mounts, homeDir) {
 		args = append(args, "-v", mount)
 	}
 
 	// Agent-specific mounts
+	// When no explicit container path is given (e.g. "~/dev"), map host ~/X
+	// to containerHome/X so the container user can access it.
 	for _, mount := range agentCfg.Mounts {
 		readOnly := false
 		if strings.HasSuffix(mount, ":ro") {
@@ -53,9 +61,17 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 		if !filepath.IsAbs(hostPath) {
 			hostPath = filepath.Join(homeDir, hostPath)
 		}
-		containerPath := hostPath
+		var containerPath string
 		if len(parts) > 1 {
 			containerPath = expandHome(parts[1], homeDir)
+		} else {
+			// Map ~/X to containerHome/X
+			rel, err := filepath.Rel(homeDir, hostPath)
+			if err == nil && !strings.HasPrefix(rel, "..") {
+				containerPath = filepath.Join(containerHome, rel)
+			} else {
+				containerPath = hostPath
+			}
 		}
 
 		flag := hostPath + ":" + containerPath
@@ -71,12 +87,6 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 		busSocket = "/tmp/deskd.sock"
 	}
 	args = append(args, "-v", busSocket+":"+busSocket)
-
-	// Container home dir
-	containerHome := ctrCfg.HomeDir
-	if containerHome == "" {
-		containerHome = "/home/node"
-	}
 
 	// Mount only this agent's deskd state file (not all agents)
 	// Map host path to container home equivalent

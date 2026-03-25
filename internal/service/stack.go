@@ -140,7 +140,12 @@ func StartAll(svcCfg config.ServicesConfig, plat platform.Platform, opts ...Star
 	// Ensure deskd agent state exists before starting agent services.
 	if o.cfg != nil {
 		for name, agentCfg := range o.cfg.Agents {
-			if err := ensureAgentState(name, agentCfg); err != nil {
+			ctrCfg := o.cfg.Containers[agentCfg.Container]
+			containerHome := ctrCfg.HomeDir
+			if containerHome == "" {
+				containerHome = "/home/node"
+			}
+			if err := ensureAgentState(name, agentCfg, containerHome); err != nil {
 				return fmt.Errorf("ensure agent state %s: %w", name, err)
 			}
 		}
@@ -182,7 +187,8 @@ type deskdAgentState struct {
 
 // ensureAgentState creates the deskd agent state file if it doesn't exist.
 // The state file at ~/.deskd/agents/<name>.yaml is required by deskd agent run.
-func ensureAgentState(name string, agentCfg config.AgentConfig) error {
+// containerHome is the home dir inside the container (e.g. /home/node).
+func ensureAgentState(name string, agentCfg config.AgentConfig, containerHome string) error {
 	homeDir := currentHomeDir()
 	if homeDir == "" {
 		return fmt.Errorf("cannot determine home directory")
@@ -191,28 +197,33 @@ func ensureAgentState(name string, agentCfg config.AgentConfig) error {
 	stateDir := filepath.Join(homeDir, ".deskd", "agents")
 	statePath := filepath.Join(stateDir, name+".yaml")
 
-	// Recreate if missing or invalid (wrong schema)
+	// Recreate if missing or invalid
 	if content, err := os.ReadFile(statePath); err == nil {
 		var existing deskdAgentState
 		if yaml.Unmarshal(content, &existing) == nil && existing.Config.Name != "" {
 			return nil // valid state exists
 		}
-		// Invalid format — regenerate
 	}
 
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
 
-	// Resolve work_dir: use first mount path if not otherwise determinable
-	workDir := ""
+	// Resolve work_dir: use first mount path, mapped to container home
+	workDir := containerHome
 	if len(agentCfg.Mounts) > 0 {
 		mount := agentCfg.Mounts[0]
 		mount = strings.TrimSuffix(mount, ":ro")
 		parts := strings.SplitN(mount, ":", 2)
-		workDir = expandHome(parts[0], homeDir)
-		if !filepath.IsAbs(workDir) {
-			workDir = filepath.Join(homeDir, workDir)
+		hostPath := expandHome(parts[0], homeDir)
+		if !filepath.IsAbs(hostPath) {
+			hostPath = filepath.Join(homeDir, hostPath)
+		}
+		// Map host ~/X to containerHome/X
+		if rel, err := filepath.Rel(homeDir, hostPath); err == nil && !strings.HasPrefix(rel, "..") {
+			workDir = filepath.Join(containerHome, rel)
+		} else {
+			workDir = hostPath
 		}
 	}
 
