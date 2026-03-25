@@ -314,11 +314,11 @@ func extractReplyText(payload any) string {
 	case string:
 		return p
 	case map[string]any:
-		if text, ok := p["text"].(string); ok {
-			return text
-		}
-		if text, ok := p["task"].(string); ok {
-			return text
+		// Try common payload keys in order of likelihood
+		for _, key := range []string{"result", "text", "task", "error"} {
+			if text, ok := p[key].(string); ok && text != "" {
+				return text
+			}
 		}
 	}
 	return ""
