@@ -130,7 +130,7 @@ func runServiceStart() error {
 		return err
 	}
 	plat, _ := platform.Detect()
-	return service.StartAll(cfg.Services, plat)
+	return service.StartAll(cfg.Services, plat, service.WithConfig(cfg))
 }
 
 func pullHomeRepo() error {

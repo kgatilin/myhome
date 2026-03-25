@@ -3,10 +3,52 @@ package service
 import (
 	"fmt"
 	"os/user"
+	"strings"
 
 	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/platform"
 )
+
+// StartOption configures how services are started.
+type StartOption func(*startOptions)
+
+type startOptions struct {
+	cfg *config.Config
+}
+
+// WithConfig provides the full config so agent services can be launched as containers.
+func WithConfig(cfg *config.Config) StartOption {
+	return func(o *startOptions) {
+		o.cfg = cfg
+	}
+}
+
+func resolveStartOptions(opts []StartOption) startOptions {
+	var o startOptions
+	for _, fn := range opts {
+		fn(&o)
+	}
+	return o
+}
+
+// resolveServiceCommand returns the command for a service entry. For agent
+// services (name starts with "agent-") where a matching AgentConfig exists in
+// the full config, it builds a container run command instead.
+func resolveServiceCommand(e Entry, o startOptions) (string, error) {
+	if o.cfg == nil || !strings.HasPrefix(e.Name, "agent-") {
+		return e.Command, nil
+	}
+	agentName := strings.TrimPrefix(e.Name, "agent-")
+	agentCfg, ok := o.cfg.Agents[agentName]
+	if !ok {
+		return e.Command, nil
+	}
+	ctrCfg, ok := o.cfg.Containers[agentCfg.Container]
+	if !ok {
+		return "", fmt.Errorf("container %q referenced by agent %q not found", agentCfg.Container, agentName)
+	}
+	return BuildAgentContainerCommand(agentName, agentCfg, ctrCfg, o.cfg)
+}
 
 // Entry is a flattened service with its resolved name and config.
 type Entry struct {
@@ -83,12 +125,19 @@ func topoSort(entries []Entry) []Entry {
 }
 
 // StartAll installs and starts all services in dependency order.
-func StartAll(cfg config.ServicesConfig, plat platform.Platform) error {
+// For agent services that have a matching entry in cfg.Agents, the service
+// command is rewritten to a container run command with bus socket mount.
+func StartAll(svcCfg config.ServicesConfig, plat platform.Platform, opts ...StartOption) error {
+	o := resolveStartOptions(opts)
 	username := currentUsername()
-	entries := Flatten(cfg)
+	entries := Flatten(svcCfg)
 	for _, e := range entries {
-		svcCfg := config.ServiceConfig{Command: e.Command, Restart: e.Restart}
-		if err := Install(e.Name, svcCfg, username, plat); err != nil {
+		command, err := resolveServiceCommand(e, o)
+		if err != nil {
+			return fmt.Errorf("resolve %s: %w", e.Name, err)
+		}
+		sc := config.ServiceConfig{Command: command, Restart: e.Restart}
+		if err := Install(e.Name, sc, username, plat); err != nil {
 			return fmt.Errorf("start %s: %w", e.Name, err)
 		}
 		fmt.Printf("started %s\n", e.Name)
@@ -114,14 +163,19 @@ func StopAll(cfg config.ServicesConfig, plat platform.Platform) error {
 }
 
 // StartOne installs and starts a single named service.
-func StartOne(name string, cfg config.ServicesConfig, plat platform.Platform) error {
-	entry, err := findEntry(name, cfg)
+func StartOne(name string, svcCfg config.ServicesConfig, plat platform.Platform, opts ...StartOption) error {
+	entry, err := findEntry(name, svcCfg)
 	if err != nil {
 		return err
 	}
+	o := resolveStartOptions(opts)
+	command, err := resolveServiceCommand(entry, o)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", entry.Name, err)
+	}
 	username := currentUsername()
-	svcCfg := config.ServiceConfig{Command: entry.Command, Restart: entry.Restart}
-	return Install(entry.Name, svcCfg, username, plat)
+	sc := config.ServiceConfig{Command: command, Restart: entry.Restart}
+	return Install(entry.Name, sc, username, plat)
 }
 
 // StopOne stops a single named service.

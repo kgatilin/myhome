@@ -5,6 +5,7 @@ type AgentConfig struct {
 	Container    string            `yaml:"container"`
 	Model        string            `yaml:"model,omitempty"`
 	Mounts       []string          `yaml:"mounts,omitempty"`
+	BusSocket    string            `yaml:"bus_socket,omitempty"`
 	SystemPrompt string            `yaml:"system_prompt,omitempty"`
 	AllowedTools []string          `yaml:"allowed_tools,omitempty"`
 	MaxBudgetUSD float64           `yaml:"max_budget_usd,omitempty"`

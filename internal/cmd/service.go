@@ -24,10 +24,11 @@ var serviceStartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		withCfg := service.WithConfig(cfg)
 		if len(args) == 0 {
-			return service.StartAll(cfg.Services, plat)
+			return service.StartAll(cfg.Services, plat, withCfg)
 		}
-		return service.StartOne(args[0], cfg.Services, plat)
+		return service.StartOne(args[0], cfg.Services, plat, withCfg)
 	},
 }
 
