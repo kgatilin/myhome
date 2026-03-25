@@ -60,8 +60,9 @@ var syncCmd = &cobra.Command{
 					remainingArgs = append(remainingArgs, "--services")
 				}
 				fmt.Printf("Re-executing %s %v\n", newBin, remainingArgs)
-				syscall.Exec(newBin, append([]string{"myhome"}, remainingArgs...), os.Environ())
+				err := syscall.Exec(newBin, append([]string{"myhome"}, remainingArgs...), os.Environ())
 				// syscall.Exec replaces the process — if we get here, it failed
+				fmt.Printf("Warning: re-exec failed: %v (continuing with current binary)\n", err)
 			}
 		}
 
