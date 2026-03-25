@@ -32,4 +32,5 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(adapterCmd)
+	rootCmd.AddCommand(serviceCmd)
 }
