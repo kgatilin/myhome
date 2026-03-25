@@ -72,9 +72,9 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	}
 	args = append(args, "-v", busSocket+":"+busSocket)
 
-	// Mount deskd agent state so deskd inside container can find agent configs
-	deskdStateDir := filepath.Join(homeDir, ".deskd")
-	args = append(args, "-v", deskdStateDir+":"+deskdStateDir+":ro")
+	// Mount only this agent's deskd state file (not all agents)
+	deskdAgentFile := filepath.Join(homeDir, ".deskd", "agents", name+".yaml")
+	args = append(args, "-v", deskdAgentFile+":"+deskdAgentFile+":ro")
 
 	// Container home dir
 	containerHome := ctrCfg.HomeDir
