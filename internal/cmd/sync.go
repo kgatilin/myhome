@@ -1,0 +1,109 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/kgatilin/myhome/internal/config"
+	"github.com/kgatilin/myhome/internal/repo"
+	"github.com/kgatilin/myhome/internal/selfupdate"
+	"github.com/kgatilin/myhome/internal/tools"
+)
+
+var syncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Run full sync pipeline (self-update, tools, repos)",
+	Long:  "Run the full myhome sync pipeline: rebuild own binary, install dev runtimes, clone and build repos.\nUse --self, --tools, --repos to run only specific steps.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		doSelf, _ := cmd.Flags().GetBool("self")
+		doTools, _ := cmd.Flags().GetBool("tools")
+		doRepos, _ := cmd.Flags().GetBool("repos")
+
+		// Default: run all steps if no flags specified
+		if !doSelf && !doTools && !doRepos {
+			doSelf = true
+			doTools = true
+			doRepos = true
+		}
+
+		if doSelf {
+			fmt.Println("==> Self-update")
+			if err := runSelfUpdate(); err != nil {
+				return fmt.Errorf("self-update: %w", err)
+			}
+		}
+
+		if doTools {
+			fmt.Println("==> Tools sync")
+			if err := runToolsSync(); err != nil {
+				return fmt.Errorf("tools sync: %w", err)
+			}
+		}
+
+		if doRepos {
+			fmt.Println("==> Repo sync")
+			if err := runRepoSync(); err != nil {
+				return fmt.Errorf("repo sync: %w", err)
+			}
+		}
+
+		fmt.Println("Sync complete")
+		return nil
+	},
+}
+
+func runSelfUpdate() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	var repoPaths []string
+	cfgPath, err := config.DefaultConfigPath()
+	if err == nil {
+		if cfg, loadErr := config.Load(cfgPath); loadErr == nil {
+			for _, r := range cfg.Repos {
+				repoPaths = append(repoPaths, r.Path)
+			}
+		}
+	}
+
+	sourceDir, err := selfupdate.FindSourceDir(homeDir, repoPaths)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Source repo: %s\n", sourceDir)
+	return selfupdate.Run(sourceDir)
+}
+
+func runToolsSync() error {
+	cfg, state, homeDir, err := loadRepoContext()
+	if err != nil {
+		return err
+	}
+	env, err := cfg.ResolveEnv(state.CurrentEnv)
+	if err != nil {
+		return err
+	}
+	return tools.Sync(env.Tools, homeDir)
+}
+
+func runRepoSync() error {
+	cfg, state, homeDir, err := loadRepoContext()
+	if err != nil {
+		return err
+	}
+	env, err := cfg.ResolveEnv(state.CurrentEnv)
+	if err != nil {
+		return err
+	}
+	return repo.Sync(env, homeDir)
+}
+
+func init() {
+	syncCmd.Flags().Bool("self", false, "Only run self-update step")
+	syncCmd.Flags().Bool("tools", false, "Only run tools sync step")
+	syncCmd.Flags().Bool("repos", false, "Only run repo sync step")
+}
