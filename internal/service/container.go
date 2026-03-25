@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -91,14 +92,14 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	// Container env vars
 	for k, v := range ctrCfg.Env {
 		if v != "" {
-			args = append(args, "-e", k+"="+v)
+			args = append(args, "-e", k+"="+resolveEnvValue(v))
 		}
 	}
 
 	// Agent-specific env vars
 	for k, v := range agentCfg.Env {
 		if v != "" {
-			args = append(args, "-e", k+"="+v)
+			args = append(args, "-e", k+"="+resolveEnvValue(v))
 		}
 	}
 
@@ -141,6 +142,19 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	args = append(args, shell, "-c", fmt.Sprintf("exec %s", serviceCommand))
 
 	return shellJoin(args), nil
+}
+
+// resolveEnvValue evaluates shell commands in env values like $(gh auth token).
+func resolveEnvValue(v string) string {
+	if !strings.HasPrefix(v, "$(") || !strings.HasSuffix(v, ")") {
+		return v
+	}
+	cmd := v[2 : len(v)-1] // strip $( and )
+	out, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil {
+		return v // return original if execution fails
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // shellJoin quotes arguments that contain spaces or special characters.
