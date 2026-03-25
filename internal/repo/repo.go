@@ -47,6 +47,11 @@ func SyncWithState(env *config.ResolvedEnv, homeDir string, state *config.State,
 	for _, r := range env.Repos {
 		absPath := filepath.Join(homeDir, r.Path)
 		if isGitRepo(absPath) {
+			// Pull latest changes
+			if err := gitPull(absPath); err != nil {
+				fmt.Printf("  ✗ pull %s: %v\n", r.Path, err)
+				// Continue even if pull fails (might have local changes)
+			}
 			if r.Build != nil {
 				if err := buildIfNeeded(r, absPath, state); err != nil {
 					fmt.Printf("  ✗ build %s: %v\n", r.Path, err)
@@ -212,6 +217,30 @@ func envWithMiseShims() []string {
 func isGitRepo(path string) bool {
 	info, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil && info.IsDir()
+}
+
+func gitPull(path string) error {
+	// Stash local changes, pull, then pop
+	dirty := isRepoDirty(path)
+	if dirty {
+		stash := exec.Command("git", "-C", path, "stash")
+		stash.Stdout = os.Stdout
+		stash.Stderr = os.Stderr
+		if err := stash.Run(); err != nil {
+			return fmt.Errorf("git stash: %w", err)
+		}
+	}
+	pull := exec.Command("git", "-C", path, "pull", "--ff-only")
+	pull.Stdout = os.Stdout
+	pull.Stderr = os.Stderr
+	pullErr := pull.Run()
+	if dirty {
+		pop := exec.Command("git", "-C", path, "stash", "pop")
+		pop.Stdout = os.Stdout
+		pop.Stderr = os.Stderr
+		pop.Run() // best effort
+	}
+	return pullErr
 }
 
 func isRepoDirty(path string) bool {
