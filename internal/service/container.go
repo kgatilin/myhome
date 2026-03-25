@@ -26,10 +26,17 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 
 	args := []string{runtime, "run", "--rm", "--name", containerName}
 
-	// Run as the host user so mounted volumes are writable
+	// Container home dir
+	containerHome := ctrCfg.HomeDir
+	if containerHome == "" {
+		containerHome = "/home/node"
+	}
+
+	// Run as the host user so mounted volumes are writable.
+	// Set HOME to containerHome so tools find configs at the right path.
 	u, _ := user.Current()
 	if u != nil {
-		args = append(args, "--user", u.Uid+":"+u.Gid)
+		args = append(args, "--user", u.Uid+":"+u.Gid, "-e", "HOME="+containerHome)
 	}
 
 	// Firewall: use host network + NET_ADMIN caps
@@ -39,12 +46,6 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 			"--cap-add=NET_RAW",
 			"--network=host",
 		)
-	}
-
-	// Container home dir
-	containerHome := ctrCfg.HomeDir
-	if containerHome == "" {
-		containerHome = "/home/node"
 	}
 
 	// Container config mounts
