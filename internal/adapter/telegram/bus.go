@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 )
 
@@ -95,10 +96,18 @@ func (c *BusClient) send(msg BusMessage) error {
 func (c *BusClient) readLoop() {
 	scanner := bufio.NewScanner(c.conn)
 	for scanner.Scan() {
+		line := scanner.Bytes()
 		var msg BusMessage
-		if err := json.Unmarshal(scanner.Bytes(), &msg); err == nil {
-			c.replies <- msg
+		if err := json.Unmarshal(line, &msg); err != nil {
+			log.Printf("bus read: unmarshal error: %v (line: %s)", err, string(line))
+			continue
 		}
+		log.Printf("bus read: received message type=%s target=%s", msg.Type, msg.Target)
+		c.replies <- msg
 	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("bus read: scanner error: %v", err)
+	}
+	log.Printf("bus read: connection closed")
 	close(c.replies)
 }
