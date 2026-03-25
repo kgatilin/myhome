@@ -12,6 +12,7 @@ type AgentConfig struct {
 	Identity     AgentIdentity     `yaml:"identity,omitempty"`
 	Secrets      AgentSecrets      `yaml:"secrets,omitempty"`
 	Env          map[string]string `yaml:"env,omitempty"`
+	Shell        string            `yaml:"shell,omitempty"` // shell inside container (default: /bin/sh)
 }
 
 // AgentIdentity defines the identity metadata for an agent (git config, SSH key).

@@ -14,7 +14,7 @@ import (
 // for an agent service. The resulting command is used as ExecStart in
 // systemd/launchd units. The container runs in the foreground (no -d) so the
 // service manager handles lifecycle.
-func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg config.Container, cfg *config.Config) (string, error) {
+func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg config.Container, cfg *config.Config, serviceCommand string) (string, error) {
 	runtime, err := container.DetectRuntime(cfg.ContainerRuntime)
 	if err != nil {
 		return "", fmt.Errorf("detect container runtime: %w", err)
@@ -128,20 +128,17 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	}
 	args = append(args, image)
 
-	// Build startup script: run container startup commands (except {{.Prompt}})
-	// then exec the deskd agent command
-	var scriptParts []string
-	for _, sc := range ctrCfg.StartupCommands {
-		if strings.Contains(sc, "{{.Prompt}}") {
-			continue
-		}
-		scriptParts = append(scriptParts, sc)
+	// The agent command comes from the service config (services.agents.<name>.command).
+	// Not hardcoded — supports deskd, uagent, claude, or any runtime.
+	// Shell from agent config, defaults to container's shell or /bin/sh.
+	shell := agentCfg.Shell
+	if shell == "" && ctrCfg.Shell != "" {
+		shell = ctrCfg.Shell
 	}
-
-	// The actual agent command (from the service config)
-	scriptParts = append(scriptParts, fmt.Sprintf("exec deskd agent run %s --socket %s", name, busSocket))
-	script := strings.Join(scriptParts, " ; ")
-	args = append(args, "/bin/bash", "-c", script)
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	args = append(args, shell, "-c", fmt.Sprintf("exec %s", serviceCommand))
 
 	return strings.Join(args, " "), nil
 }

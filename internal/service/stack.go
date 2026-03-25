@@ -52,7 +52,7 @@ func resolveServiceCommand(e Entry, o startOptions) (string, error) {
 		// will apply the default image.
 		ctrCfg = config.Container{}
 	}
-	return BuildAgentContainerCommand(agentName, agentCfg, ctrCfg, o.cfg)
+	return BuildAgentContainerCommand(agentName, agentCfg, ctrCfg, o.cfg, e.Command)
 }
 
 // Entry is a flattened service with its resolved name and config.

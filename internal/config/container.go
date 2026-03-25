@@ -12,4 +12,5 @@ type Container struct {
 	Volumes         []string          `yaml:"volumes,omitempty"`
 	Env             map[string]string `yaml:"env,omitempty"`
 	HomeDir         string            `yaml:"home_dir,omitempty"` // container user home, default /home/node
+	Shell           string            `yaml:"shell,omitempty"`    // shell binary, default /bin/sh
 }
