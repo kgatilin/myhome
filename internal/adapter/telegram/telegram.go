@@ -165,6 +165,11 @@ func (b *Bot) handleUpdate(u Update) {
 
 	msg := u.Message
 
+	// Ignore messages from the bot itself to prevent reply loops.
+	if b.cfg.BotUsername != "" && msg.From.Username == b.cfg.BotUsername {
+		return
+	}
+
 	// /info always works regardless of routing.
 	if msg.Text == "/info" {
 		b.handleInfo(msg)
