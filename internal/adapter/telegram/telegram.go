@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -70,9 +71,10 @@ func (b *Bot) Run() error {
 	b.cfg.Token = token
 
 	if err := b.bus.Connect(); err != nil {
-		return fmt.Errorf("bus connect: %w", err)
+		log.Printf("Warning: bus connect failed: %v (running without bus — /info commands still work)", err)
+	} else {
+		defer b.bus.Close()
 	}
-	defer b.bus.Close()
 
 	// Forward bus replies to Telegram.
 	go b.replyLoop()
@@ -96,11 +98,19 @@ func (b *Bot) Run() error {
 	}
 }
 
-// resolveToken resolves the bot token, supporting vault:// prefix.
+// resolveToken resolves the bot token. Checks in order:
+// 1. TELEGRAM_BOT_TOKEN env var
+// 2. vault:// prefix in config (calls myhome vault get)
+// 3. raw token string from config
 func (b *Bot) resolveToken() (string, error) {
+	// Check env var first
+	if envToken := os.Getenv("TELEGRAM_BOT_TOKEN"); envToken != "" {
+		return envToken, nil
+	}
+
 	token := b.cfg.Token
 	if token == "" {
-		return "", fmt.Errorf("telegram bot token not configured")
+		return "", fmt.Errorf("telegram bot token not configured (set TELEGRAM_BOT_TOKEN env, vault:// in config, or --token flag)")
 	}
 
 	if strings.HasPrefix(token, "vault://") {
