@@ -12,6 +12,7 @@ import (
 // 1. Pulls latest changes in the source repo
 // 2. Builds a new binary
 // 3. Replaces the current binary
+// Run performs self-update: pull, build, replace binary.
 func Run(sourceDir string) error {
 	fmt.Printf("Pulling latest changes in %s\n", sourceDir)
 	if err := gitPull(sourceDir); err != nil {
@@ -19,7 +20,6 @@ func Run(sourceDir string) error {
 	}
 
 	currentBin := installPath()
-
 
 	tmpBin := currentBin + ".new"
 	fmt.Printf("Building myhome to %s\n", tmpBin)
@@ -36,6 +36,11 @@ func Run(sourceDir string) error {
 
 	fmt.Println("Self-update complete")
 	return nil
+}
+
+// InstallPath returns where the binary gets installed.
+func InstallPath() string {
+	return installPath()
 }
 
 // FindSourceDir locates the myhome source repo by checking the well-known path

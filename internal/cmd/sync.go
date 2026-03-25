@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -43,6 +44,24 @@ var syncCmd = &cobra.Command{
 			fmt.Println("==> Self-update")
 			if err := runSelfUpdate(); err != nil {
 				fmt.Printf("Warning: self-update failed: %v (continuing)\n", err)
+			} else {
+				// Re-exec the new binary with remaining steps
+				// so tools/repos/services run with the updated code
+				newBin := selfupdate.InstallPath()
+				var remainingArgs []string
+				remainingArgs = append(remainingArgs, "sync")
+				if doTools {
+					remainingArgs = append(remainingArgs, "--tools")
+				}
+				if doRepos {
+					remainingArgs = append(remainingArgs, "--repos")
+				}
+				if doServices {
+					remainingArgs = append(remainingArgs, "--services")
+				}
+				fmt.Printf("Re-executing %s %v\n", newBin, remainingArgs)
+				syscall.Exec(newBin, append([]string{"myhome"}, remainingArgs...), os.Environ())
+				// syscall.Exec replaces the process — if we get here, it failed
 			}
 		}
 
