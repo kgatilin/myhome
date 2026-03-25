@@ -117,8 +117,16 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 		args = append(args, "-e", "GIT_COMMITTER_EMAIL="+agentCfg.Identity.Git.Email)
 	}
 
-	// Image
-	args = append(args, ctrCfg.Image)
+	// Mount deskd binary from host so it's available inside the container
+	deskdPath := filepath.Join(homeDir, ".local", "bin", "deskd")
+	args = append(args, "-v", deskdPath+":/usr/local/bin/deskd:ro")
+
+	// Image — fall back to claude-code-local:official if not specified
+	image := ctrCfg.Image
+	if image == "" {
+		image = "claude-code-local:official"
+	}
+	args = append(args, image)
 
 	// Build startup script: run container startup commands (except {{.Prompt}})
 	// then exec the deskd agent command

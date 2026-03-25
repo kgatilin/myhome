@@ -2,11 +2,14 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 
 	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/platform"
+	"gopkg.in/yaml.v3"
 )
 
 // StartOption configures how services are started.
@@ -45,7 +48,9 @@ func resolveServiceCommand(e Entry, o startOptions) (string, error) {
 	}
 	ctrCfg, ok := o.cfg.Containers[agentCfg.Container]
 	if !ok {
-		return "", fmt.Errorf("container %q referenced by agent %q not found", agentCfg.Container, agentName)
+		// Fall back to an empty container config — BuildAgentContainerCommand
+		// will apply the default image.
+		ctrCfg = config.Container{}
 	}
 	return BuildAgentContainerCommand(agentName, agentCfg, ctrCfg, o.cfg)
 }
@@ -129,6 +134,16 @@ func topoSort(entries []Entry) []Entry {
 // command is rewritten to a container run command with bus socket mount.
 func StartAll(svcCfg config.ServicesConfig, plat platform.Platform, opts ...StartOption) error {
 	o := resolveStartOptions(opts)
+
+	// Ensure deskd agent state exists before starting agent services.
+	if o.cfg != nil {
+		for name, agentCfg := range o.cfg.Agents {
+			if err := ensureAgentState(name, agentCfg); err != nil {
+				return fmt.Errorf("ensure agent state %s: %w", name, err)
+			}
+		}
+	}
+
 	username := currentUsername()
 	entries := Flatten(svcCfg)
 	for _, e := range entries {
@@ -142,6 +157,62 @@ func StartAll(svcCfg config.ServicesConfig, plat platform.Platform, opts ...Star
 		}
 		fmt.Printf("started %s\n", e.Name)
 	}
+	return nil
+}
+
+// deskdAgentState is the YAML structure for ~/.deskd/agents/<name>.yaml.
+type deskdAgentState struct {
+	Name         string `yaml:"name"`
+	SystemPrompt string `yaml:"system_prompt,omitempty"`
+	WorkDir      string `yaml:"work_dir,omitempty"`
+}
+
+// ensureAgentState creates the deskd agent state file if it doesn't exist.
+// The state file at ~/.deskd/agents/<name>.yaml is required by deskd agent run.
+func ensureAgentState(name string, agentCfg config.AgentConfig) error {
+	homeDir := currentHomeDir()
+	if homeDir == "" {
+		return fmt.Errorf("cannot determine home directory")
+	}
+
+	stateDir := filepath.Join(homeDir, ".deskd", "agents")
+	statePath := filepath.Join(stateDir, name+".yaml")
+
+	if _, err := os.Stat(statePath); err == nil {
+		return nil // already exists
+	}
+
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return fmt.Errorf("create state dir: %w", err)
+	}
+
+	// Resolve work_dir: use first mount path if not otherwise determinable
+	workDir := ""
+	if len(agentCfg.Mounts) > 0 {
+		mount := agentCfg.Mounts[0]
+		mount = strings.TrimSuffix(mount, ":ro")
+		parts := strings.SplitN(mount, ":", 2)
+		workDir = expandHome(parts[0], homeDir)
+		if !filepath.IsAbs(workDir) {
+			workDir = filepath.Join(homeDir, workDir)
+		}
+	}
+
+	state := deskdAgentState{
+		Name:         name,
+		SystemPrompt: agentCfg.SystemPrompt,
+		WorkDir:      workDir,
+	}
+
+	data, err := yaml.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("marshal agent state: %w", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o644); err != nil {
+		return fmt.Errorf("write agent state: %w", err)
+	}
+
+	fmt.Printf("created deskd agent state: %s\n", statePath)
 	return nil
 }
 
