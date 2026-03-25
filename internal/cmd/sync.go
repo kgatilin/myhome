@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 
@@ -26,6 +27,12 @@ var syncCmd = &cobra.Command{
 			doSelf = true
 			doTools = true
 			doRepos = true
+		}
+
+		// Step 0: pull home repo to get latest config
+		fmt.Println("==> Pulling home repo")
+		if err := pullHomeRepo(); err != nil {
+			fmt.Printf("Warning: git pull failed: %v (continuing)\n", err)
 		}
 
 		if doSelf {
@@ -100,6 +107,17 @@ func runRepoSync() error {
 		return err
 	}
 	return repo.Sync(env, homeDir)
+}
+
+func pullHomeRepo() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "-C", homeDir, "pull", "--ff-only")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func init() {
