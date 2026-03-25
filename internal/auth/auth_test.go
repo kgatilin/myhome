@@ -12,7 +12,7 @@ import (
 func testAuth() map[string]config.AuthHost {
 	return map[string]config.AuthHost{
 		"github.com":          {Key: "id_personal"},
-		"gitlab.iponweb.net":  {Key: "id_work"},
+		"gitlab.example.com":  {Key: "id_work"},
 	}
 }
 
@@ -23,7 +23,7 @@ func TestGenerateSSHConfig(t *testing.T) {
 		"Host github.com",
 		"IdentityFile ~/.ssh/id_personal",
 		"IdentitiesOnly yes",
-		"Host gitlab.iponweb.net",
+		"Host gitlab.example.com",
 		"IdentityFile ~/.ssh/id_work",
 	}
 	for _, c := range checks {

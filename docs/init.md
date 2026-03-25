@@ -44,7 +44,7 @@ repos:
     env: base
 
   - path: work/uagent
-    url: git@gitlab.iponweb.net:bidcore/uagent-space/uagent.git
+    url: git@gitlab.example.com:team/project/repo.git
     env: work
     worktrees:
       dir: .worktrees
@@ -82,7 +82,7 @@ packages:
 auth:
   github.com:
     key: id_personal
-  gitlab.iponweb.net:
+  gitlab.example.com:
     key: id_work
 
 agent_templates:
@@ -140,12 +140,12 @@ claude:
       auth_file: ~/.claude-vertex.json
       env:
         CLAUDE_CODE_USE_VERTEX: "1"
-        ANTHROPIC_VERTEX_PROJECT_ID: iow-bidcore-dev
+        ANTHROPIC_VERTEX_PROJECT_ID: my-vertex-project
     vertex-personal:
       auth_file: ~/.claude-vertex-personal.json
       env:
         CLAUDE_CODE_USE_VERTEX: "1"
-        ANTHROPIC_VERTEX_PROJECT_ID: iow-bidcore-dev
+        ANTHROPIC_VERTEX_PROJECT_ID: my-vertex-project
 ```
 
 ### Commands

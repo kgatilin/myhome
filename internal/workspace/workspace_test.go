@@ -11,8 +11,8 @@ import (
 
 var testRepos = []config.Repo{
 	{Path: "dev/tools/myhome", URL: "git@github.com:kgatilin/myhome.git", Env: "base"},
-	{Path: "work/uagent", URL: "git@gitlab.iponweb.net:bidcore/uagent.git", Env: "work"},
-	{Path: "work/infra", URL: "git@gitlab.iponweb.net:bidcore/infra.git", Env: "work"},
+	{Path: "work/uagent", URL: "git@gitlab.example.com:team/project/repo.git", Env: "work"},
+	{Path: "work/infra", URL: "git@gitlab.example.com:team/infra/repo.git", Env: "work"},
 	{Path: "dev/tools/go-arch-lint", URL: "git@github.com:kgatilin/go-arch-lint.git", Env: "personal"},
 	{Path: "life/notes", URL: "git@github.com:kgatilin/notes.git", Env: "personal"},
 }
