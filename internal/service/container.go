@@ -23,7 +23,7 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	homeDir := currentHomeDir()
 	containerName := "agent-" + name
 
-	args := []string{runtime, "run", "--name", containerName, "--replace"}
+	args := []string{runtime, "run", "--rm", "--name", containerName}
 
 	// Firewall: use host network + NET_ADMIN caps
 	if ctrCfg.Firewall {

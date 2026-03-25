@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -65,6 +68,10 @@ var syncCmd = &cobra.Command{
 				fmt.Printf("Warning: re-exec failed: %v (continuing with current binary)\n", err)
 			}
 		}
+
+		// Ensure PATH is set up correctly for this and future sessions
+		fmt.Println("==> Ensuring PATH")
+		ensurePath()
 
 		if doTools {
 			fmt.Println("==> Tools sync")
@@ -151,6 +158,29 @@ func runServiceStart() error {
 	}
 	plat, _ := platform.Detect()
 	return service.StartAll(cfg.Services, plat, service.WithConfig(cfg))
+}
+
+func ensurePath() {
+	homeDir, _ := os.UserHomeDir()
+	requiredDirs := []string{
+		filepath.Join(homeDir, ".local", "bin"),
+		filepath.Join(homeDir, ".local", "share", "mise", "shims"),
+	}
+
+	// Add to current process PATH
+	currentPath := os.Getenv("PATH")
+	for _, dir := range requiredDirs {
+		if !strings.Contains(currentPath, dir) {
+			currentPath = dir + string(os.PathListSeparator) + currentPath
+		}
+	}
+	os.Setenv("PATH", currentPath)
+
+	// Linux: ensure /etc/environment has the right PATH
+	if runtime.GOOS == "linux" {
+		etcEnv := fmt.Sprintf("PATH=\"%s\"", currentPath)
+		os.WriteFile("/etc/environment", []byte(etcEnv+"\n"), 0o644)
+	}
 }
 
 func pullHomeRepo() error {
