@@ -258,6 +258,72 @@ func TestState(t *testing.T) {
 	}
 }
 
+func TestRepoBuildConfig(t *testing.T) {
+	cfg, err := Parse([]byte(`
+envs:
+  base:
+    include: [base]
+repos:
+  - path: dev/tools/deskd
+    url: git@github.com:kgatilin/deskd.git
+    env: base
+    build:
+      command: cargo build --release
+      install: cp target/release/deskd ~/bin/deskd
+  - path: dev/tools/myhome
+    url: git@github.com:kgatilin/myhome.git
+    env: base
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Repos[0].Build == nil {
+		t.Fatal("first repo should have build config")
+	}
+	if cfg.Repos[0].Build.Command != "cargo build --release" {
+		t.Errorf("build command = %q", cfg.Repos[0].Build.Command)
+	}
+	if cfg.Repos[0].Build.Install != "cp target/release/deskd ~/bin/deskd" {
+		t.Errorf("build install = %q", cfg.Repos[0].Build.Install)
+	}
+	if cfg.Repos[1].Build != nil {
+		t.Error("second repo should not have build config")
+	}
+}
+
+func TestStateBuildCommits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.yml")
+
+	state, err := LoadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Initially empty
+	if state.GetBuildCommit("dev/tools/deskd") != "" {
+		t.Error("expected empty build commit for new state")
+	}
+
+	// Set and verify
+	state.SetBuildCommit("dev/tools/deskd", "abc123")
+	if state.GetBuildCommit("dev/tools/deskd") != "abc123" {
+		t.Error("build commit not set correctly")
+	}
+
+	// Save and reload
+	if err := state.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	state2, err := LoadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state2.GetBuildCommit("dev/tools/deskd") != "abc123" {
+		t.Error("build commit not preserved after save/load")
+	}
+}
+
 func TestDefaultContainerRuntime(t *testing.T) {
 	cfg, err := Parse([]byte(`
 envs:

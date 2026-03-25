@@ -34,18 +34,47 @@ func List(env *config.ResolvedEnv, homeDir string) ([]Status, error) {
 }
 
 // Sync clones any missing repos for the given environment.
-// It continues on clone failures and returns all errors joined.
+// If a repo has a build config, it builds and installs binaries after clone or pull.
+// It continues on failures and returns all errors joined.
 func Sync(env *config.ResolvedEnv, homeDir string) error {
+	return SyncWithState(env, homeDir, nil, "")
+}
+
+// SyncWithState is like Sync but also tracks build commits in the state file.
+func SyncWithState(env *config.ResolvedEnv, homeDir string, state *config.State, statePath string) error {
 	var errs []error
+	stateChanged := false
 	for _, r := range env.Repos {
 		absPath := filepath.Join(homeDir, r.Path)
 		if isGitRepo(absPath) {
+			if r.Build != nil {
+				if err := buildIfNeeded(r, absPath, state); err != nil {
+					fmt.Printf("  ✗ build %s: %v\n", r.Path, err)
+					errs = append(errs, fmt.Errorf("build %s: %w", r.Path, err))
+				} else {
+					stateChanged = true
+				}
+			}
 			continue
 		}
 		fmt.Printf("Cloning %s → %s\n", r.URL, r.Path)
 		if err := gitClone(r.URL, absPath); err != nil {
 			fmt.Printf("  ✗ %s: %v\n", r.Path, err)
 			errs = append(errs, fmt.Errorf("clone %s: %w", r.Path, err))
+			continue
+		}
+		if r.Build != nil {
+			if err := buildRepo(r, absPath, state); err != nil {
+				fmt.Printf("  ✗ build %s: %v\n", r.Path, err)
+				errs = append(errs, fmt.Errorf("build %s: %w", r.Path, err))
+			} else {
+				stateChanged = true
+			}
+		}
+	}
+	if state != nil && statePath != "" && stateChanged {
+		if err := state.Save(statePath); err != nil {
+			errs = append(errs, fmt.Errorf("save state: %w", err))
 		}
 	}
 	return errors.Join(errs...)
@@ -111,6 +140,56 @@ func FindByName(repos []config.Repo, name string) (*config.Repo, error) {
 		}
 		return nil, fmt.Errorf("ambiguous repo name %q, matches: %s", name, strings.Join(paths, ", "))
 	}
+}
+
+// buildIfNeeded builds a repo only if its HEAD has changed since the last build.
+func buildIfNeeded(r config.Repo, absPath string, state *config.State) error {
+	head, err := gitHead(absPath)
+	if err != nil {
+		return err
+	}
+	if state != nil && state.GetBuildCommit(r.Path) == head {
+		return nil
+	}
+	return buildRepo(r, absPath, state)
+}
+
+// buildRepo runs the build command and install command for a repo.
+func buildRepo(r config.Repo, absPath string, state *config.State) error {
+	fmt.Printf("Building %s\n", r.Path)
+	if err := runShell(r.Build.Command, absPath); err != nil {
+		return fmt.Errorf("build command: %w", err)
+	}
+	if r.Build.Install != "" {
+		fmt.Printf("Installing %s\n", r.Path)
+		if err := runShell(r.Build.Install, absPath); err != nil {
+			return fmt.Errorf("install command: %w", err)
+		}
+	}
+	if state != nil {
+		head, err := gitHead(absPath)
+		if err == nil {
+			state.SetBuildCommit(r.Path, head)
+		}
+	}
+	return nil
+}
+
+func gitHead(repoPath string) (string, error) {
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD in %s: %w", repoPath, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func runShell(command, dir string) error {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func isGitRepo(path string) bool {

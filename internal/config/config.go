@@ -20,6 +20,7 @@ type Config struct {
 	Auth     map[string]AuthHost          `yaml:"auth"`
 	Claude   ClaudeConfig                 `yaml:"claude"`
 	Tasks    TasksConfig                  `yaml:"tasks"`
+	Services ServicesConfig               `yaml:"services"`
 	Adapters AdaptersConfig               `yaml:"adapters"`
 	InfraConfig `yaml:",inline"`
 }
@@ -38,6 +39,13 @@ type Repo struct {
 	Worktrees *WorktreeConfig `yaml:"worktrees,omitempty"`
 	PreRun    []PreRunHook    `yaml:"pre_run,omitempty"`
 	Workflow  *WorkflowConfig `yaml:"workflow,omitempty"`
+	Build     *BuildConfig    `yaml:"build,omitempty"`
+}
+
+// BuildConfig defines how to build and install a repo's binaries.
+type BuildConfig struct {
+	Command string `yaml:"command"`
+	Install string `yaml:"install"`
 }
 
 // PreRunHook defines a pattern-matched command that runs on the host before container launch.

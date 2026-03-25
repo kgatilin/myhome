@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kgatilin/myhome/internal/config"
 )
@@ -191,6 +192,144 @@ func TestFindByNameAmbiguous(t *testing.T) {
 	_, err := FindByName(repos, "mylib")
 	if err == nil {
 		t.Error("expected ambiguous error")
+	}
+}
+
+func gitCmd(t *testing.T, args ...string) {
+	t.Helper()
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("setup %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestSyncBuildAfterClone(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	os.MkdirAll(binDir, 0o755)
+
+	// Create a bare repo to clone from, with at least one commit
+	bareRepo := filepath.Join(t.TempDir(), "buildable.git")
+	tmpWork := filepath.Join(t.TempDir(), "work")
+	gitCmd(t, "git", "init", "--bare", bareRepo)
+	gitCmd(t, "git", "clone", bareRepo, tmpWork)
+	gitCmd(t, "git", "-C", tmpWork, "commit", "--allow-empty", "-m", "init")
+	gitCmd(t, "git", "-C", tmpWork, "push", "origin", "HEAD")
+
+	// Create a marker file that the build command will create
+	env := &config.ResolvedEnv{
+		Repos: []config.Repo{
+			{
+				Path: "test/buildable",
+				URL:  bareRepo,
+				Env:  "base",
+				Build: &config.BuildConfig{
+					Command: "echo built > built.txt",
+					Install: "cp built.txt " + filepath.Join(binDir, "built.txt"),
+				},
+			},
+		},
+	}
+
+	state := &config.State{
+		LastSync:     make(map[string]time.Time),
+		BuildCommits: make(map[string]string),
+	}
+	statePath := filepath.Join(homeDir, "state.yml")
+
+	if err := SyncWithState(env, homeDir, state, statePath); err != nil {
+		t.Fatalf("SyncWithState() error: %v", err)
+	}
+
+	// Verify clone happened
+	if !isGitRepo(filepath.Join(homeDir, "test/buildable")) {
+		t.Fatal("repo should be cloned")
+	}
+
+	// Verify build ran
+	if _, err := os.Stat(filepath.Join(homeDir, "test/buildable/built.txt")); err != nil {
+		t.Error("build command should have created built.txt")
+	}
+
+	// Verify install ran
+	if _, err := os.Stat(filepath.Join(binDir, "built.txt")); err != nil {
+		t.Error("install command should have copied to bin/")
+	}
+
+	// Verify state was updated
+	if state.GetBuildCommit("test/buildable") == "" {
+		t.Error("build commit should be recorded in state")
+	}
+}
+
+func TestSyncBuildSkipsWhenUpToDate(t *testing.T) {
+	homeDir := t.TempDir()
+
+	// Create a real git repo with a commit
+	repoPath := filepath.Join(homeDir, "test/repo")
+	gitCmd(t, "git", "init", repoPath)
+	gitCmd(t, "git", "-C", repoPath, "commit", "--allow-empty", "-m", "init")
+
+	// Get the HEAD commit
+	head, err := gitHead(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-populate state with current commit
+	state := &config.State{
+		LastSync:     make(map[string]time.Time),
+		BuildCommits: map[string]string{"test/repo": head},
+	}
+
+	env := &config.ResolvedEnv{
+		Repos: []config.Repo{
+			{
+				Path: "test/repo",
+				URL:  "unused",
+				Env:  "base",
+				Build: &config.BuildConfig{
+					Command: "touch should-not-exist.txt",
+				},
+			},
+		},
+	}
+
+	if err := SyncWithState(env, homeDir, state, ""); err != nil {
+		t.Fatalf("SyncWithState() error: %v", err)
+	}
+
+	// Build should have been skipped
+	if _, err := os.Stat(filepath.Join(repoPath, "should-not-exist.txt")); err == nil {
+		t.Error("build should have been skipped for up-to-date commit")
+	}
+}
+
+func TestSyncNoBuildConfig(t *testing.T) {
+	homeDir := t.TempDir()
+
+	// Create a bare repo
+	bareRepo := filepath.Join(t.TempDir(), "nobuild.git")
+	if err := exec.Command("git", "init", "--bare", bareRepo).Run(); err != nil {
+		t.Fatalf("create bare repo: %v", err)
+	}
+
+	env := &config.ResolvedEnv{
+		Repos: []config.Repo{
+			{Path: "test/nobuild", URL: bareRepo, Env: "base"},
+		},
+	}
+
+	// Should work fine without build config (same as before)
+	if err := Sync(env, homeDir); err != nil {
+		t.Fatalf("Sync() error: %v", err)
+	}
+	if !isGitRepo(filepath.Join(homeDir, "test/nobuild")) {
+		t.Error("repo should be cloned")
 	}
 }
 

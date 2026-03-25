@@ -11,9 +11,26 @@ import (
 
 // State represents the myhome runtime state file (~/.myhome-state.yml).
 type State struct {
-	CurrentEnv string               `yaml:"current_env"`
-	LastSync   map[string]time.Time `yaml:"last_sync,omitempty"`
-	Users      []string             `yaml:"users,omitempty"`
+	CurrentEnv   string               `yaml:"current_env"`
+	LastSync     map[string]time.Time `yaml:"last_sync,omitempty"`
+	Users        []string             `yaml:"users,omitempty"`
+	BuildCommits map[string]string    `yaml:"build_commits,omitempty"`
+}
+
+// GetBuildCommit returns the last built commit for a repo path.
+func (s *State) GetBuildCommit(repoPath string) string {
+	if s.BuildCommits == nil {
+		return ""
+	}
+	return s.BuildCommits[repoPath]
+}
+
+// SetBuildCommit records the commit hash that was last built for a repo.
+func (s *State) SetBuildCommit(repoPath, commit string) {
+	if s.BuildCommits == nil {
+		s.BuildCommits = make(map[string]string)
+	}
+	s.BuildCommits[repoPath] = commit
 }
 
 // DefaultStatePath returns ~/.myhome-state.yml.
