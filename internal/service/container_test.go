@@ -91,9 +91,13 @@ func TestEnsureAgentState_createsFile(t *testing.T) {
 	}
 
 	state := deskdAgentState{
-		Name:         "test",
-		SystemPrompt: agentCfg.SystemPrompt,
-		WorkDir:      "/home/user/dev",
+		Config: deskdAgentConfig{
+			Name:         "test",
+			Model:        "sonnet",
+			SystemPrompt: agentCfg.SystemPrompt,
+			WorkDir:      "/home/user/dev",
+			MaxTurns:     100,
+		},
 	}
 
 	data, err := yaml.Marshal(state)

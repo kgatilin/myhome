@@ -161,11 +161,23 @@ func StartAll(svcCfg config.ServicesConfig, plat platform.Platform, opts ...Star
 	return nil
 }
 
+// deskdAgentConfig is the nested config inside AgentState.
+type deskdAgentConfig struct {
+	Name         string `yaml:"name"`
+	Model        string `yaml:"model"`
+	SystemPrompt string `yaml:"system_prompt"`
+	WorkDir      string `yaml:"work_dir"`
+	MaxTurns     uint32 `yaml:"max_turns"`
+}
+
 // deskdAgentState is the YAML structure for ~/.deskd/agents/<name>.yaml.
 type deskdAgentState struct {
-	Name         string `yaml:"name"`
-	SystemPrompt string `yaml:"system_prompt,omitempty"`
-	WorkDir      string `yaml:"work_dir,omitempty"`
+	Config     deskdAgentConfig `yaml:"config"`
+	PID        uint32           `yaml:"pid"`
+	SessionID  string           `yaml:"session_id"`
+	TotalTurns uint32           `yaml:"total_turns"`
+	TotalCost  float64          `yaml:"total_cost"`
+	CreatedAt  string           `yaml:"created_at"`
 }
 
 // ensureAgentState creates the deskd agent state file if it doesn't exist.
@@ -179,8 +191,13 @@ func ensureAgentState(name string, agentCfg config.AgentConfig) error {
 	stateDir := filepath.Join(homeDir, ".deskd", "agents")
 	statePath := filepath.Join(stateDir, name+".yaml")
 
-	if _, err := os.Stat(statePath); err == nil {
-		return nil // already exists
+	// Recreate if missing or invalid (wrong schema)
+	if content, err := os.ReadFile(statePath); err == nil {
+		var existing deskdAgentState
+		if yaml.Unmarshal(content, &existing) == nil && existing.Config.Name != "" {
+			return nil // valid state exists
+		}
+		// Invalid format — regenerate
 	}
 
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -199,10 +216,20 @@ func ensureAgentState(name string, agentCfg config.AgentConfig) error {
 		}
 	}
 
+	model := agentCfg.Model
+	if model == "" {
+		model = "sonnet"
+	}
+
 	state := deskdAgentState{
-		Name:         name,
-		SystemPrompt: agentCfg.SystemPrompt,
-		WorkDir:      workDir,
+		Config: deskdAgentConfig{
+			Name:         name,
+			Model:        model,
+			SystemPrompt: agentCfg.SystemPrompt,
+			WorkDir:      workDir,
+			MaxTurns:     100,
+		},
+		CreatedAt: "auto",
 	}
 
 	data, err := yaml.Marshal(state)
