@@ -18,14 +18,8 @@ func Run(sourceDir string) error {
 		return fmt.Errorf("git pull: %w", err)
 	}
 
-	currentBin, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve current binary: %w", err)
-	}
-	currentBin, err = filepath.EvalSymlinks(currentBin)
-	if err != nil {
-		return fmt.Errorf("resolve symlinks: %w", err)
-	}
+	currentBin := installPath()
+
 
 	tmpBin := currentBin + ".new"
 	fmt.Printf("Building myhome to %s\n", tmpBin)
@@ -98,6 +92,20 @@ func replaceBinary(src, dst string) error {
 		os.Remove(src)
 	}
 	return nil
+}
+
+// installPath returns the stable install location for the myhome binary.
+// Prefers /usr/local/bin if writable (Linux VPS as root), otherwise ~/.local/bin.
+func installPath() string {
+	const systemPath = "/usr/local/bin/myhome"
+	if f, err := os.OpenFile(systemPath, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		return systemPath
+	}
+	home, _ := os.UserHomeDir()
+	localBin := filepath.Join(home, ".local", "bin")
+	os.MkdirAll(localBin, 0o755)
+	return filepath.Join(localBin, "myhome")
 }
 
 func isGitRepo(path string) bool {
