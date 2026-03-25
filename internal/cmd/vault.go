@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/kgatilin/myhome/internal/vault"
 )
@@ -234,14 +233,14 @@ func init() {
 	vaultCmd.AddCommand(vaultListCmd)
 }
 
-// promptPassword reads a line from stdin. In a real implementation this would
-// use terminal.ReadPassword to suppress echo, but we keep it simple.
+// promptPassword reads a password from the terminal with echo disabled.
 func promptPassword(prompt string) (string, error) {
 	fmt.Print(prompt)
-	reader := bufio.NewReader(os.Stdin)
-	password, err := reader.ReadString('\n')
+	fd := int(os.Stdin.Fd())
+	password, err := term.ReadPassword(fd)
+	fmt.Println() // newline after hidden input
 	if err != nil {
 		return "", fmt.Errorf("read password: %w", err)
 	}
-	return strings.TrimSpace(password), nil
+	return string(password), nil
 }
