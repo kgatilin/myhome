@@ -15,10 +15,10 @@ import (
 // for an agent service. The resulting command is used as ExecStart in
 // systemd/launchd units. The container runs in the foreground (no -d) so the
 // service manager handles lifecycle.
-func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg config.Container, cfg *config.Config, serviceCommand string) (string, error) {
+func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg config.Container, cfg *config.Config, serviceCommand string) ([]string, error) {
 	runtime, err := container.DetectRuntime(cfg.ContainerRuntime)
 	if err != nil {
-		return "", fmt.Errorf("detect container runtime: %w", err)
+		return nil, fmt.Errorf("detect container runtime: %w", err)
 	}
 
 	homeDir := currentHomeDir()
@@ -89,15 +89,15 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 		"-e", "CLAUDE_CONFIG_DIR="+containerHome+"/.claude",
 	)
 
-	// Container env vars
+	// Merge env: agent overrides container
+	mergedEnv := make(map[string]string)
 	for k, v := range ctrCfg.Env {
-		if v != "" {
-			args = append(args, "-e", k+"="+resolveEnvValue(v))
-		}
+		mergedEnv[k] = v
 	}
-
-	// Agent-specific env vars
 	for k, v := range agentCfg.Env {
+		mergedEnv[k] = v
+	}
+	for k, v := range mergedEnv {
 		if v != "" {
 			args = append(args, "-e", k+"="+resolveEnvValue(v))
 		}
@@ -141,7 +141,7 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	}
 	args = append(args, shell, "-c", fmt.Sprintf("exec %s", serviceCommand))
 
-	return shellJoin(args), nil
+	return args, nil
 }
 
 // resolveEnvValue evaluates shell commands in env values like $(gh auth token).
@@ -155,18 +155,6 @@ func resolveEnvValue(v string) string {
 		return v // return original if execution fails
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// shellJoin quotes arguments that contain spaces or special characters.
-func shellJoin(args []string) string {
-	var quoted []string
-	for _, a := range args {
-		if strings.ContainsAny(a, " \t'\"$`\\!") {
-			a = "'" + strings.ReplaceAll(a, "'", "'\\''") + "'"
-		}
-		quoted = append(quoted, a)
-	}
-	return strings.Join(quoted, " ")
 }
 
 func expandHome(path, homeDir string) string {

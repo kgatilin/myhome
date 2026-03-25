@@ -3,15 +3,16 @@ package service
 import (
 	"fmt"
 
-	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/platform"
 )
 
 // Install creates and enables a service for an agent user.
 // It delegates to the platform abstraction for launchd (macOS) or systemd (Linux).
-func Install(name string, svcCfg config.ServiceConfig, username string, plat platform.Platform) error {
-	restart := svcCfg.Restart == "always"
-	if err := plat.ServiceInstall(name, svcCfg.Command, username, restart); err != nil {
+// args is the command arguments slice (single-element for simple commands,
+// multi-element for container commands).
+func Install(name string, args []string, restart string, username string, plat platform.Platform) error {
+	restartBool := restart == "always"
+	if err := plat.ServiceInstall(name, args, username, restartBool); err != nil {
 		return fmt.Errorf("install service %s: %w", name, err)
 	}
 	if err := plat.ServiceStart(name); err != nil {

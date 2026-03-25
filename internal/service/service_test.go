@@ -2,9 +2,9 @@ package service_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
-	"github.com/kgatilin/myhome/internal/config"
 	"github.com/kgatilin/myhome/internal/service"
 )
 
@@ -34,8 +34,8 @@ func (m *mockPlatform) InstallPackages(packages []string) error         { return
 func (m *mockPlatform) InstallCaskPackages(packages []string) error     { return nil }
 func (m *mockPlatform) ListInstalledPackages() ([]string, error)        { return nil, nil }
 
-func (m *mockPlatform) ServiceInstall(name, command, username string, restart bool) error {
-	m.record(fmt.Sprintf("ServiceInstall:%s:%s:%s:%v", name, command, username, restart))
+func (m *mockPlatform) ServiceInstall(name string, args []string, username string, restart bool) error {
+	m.record(fmt.Sprintf("ServiceInstall:%s:%s:%s:%v", name, strings.Join(args, " "), username, restart))
 	return m.installErr
 }
 
@@ -57,23 +57,26 @@ func (m *mockPlatform) ServiceStatus(name string) (bool, error) {
 func TestInstall(t *testing.T) {
 	tests := []struct {
 		name       string
-		svcCfg     config.ServiceConfig
+		args       []string
+		restart    string
 		installErr error
 		startErr   error
 		wantErr    bool
 		wantCalls  []string
 	}{
 		{
-			name:   "success with restart always",
-			svcCfg: config.ServiceConfig{Command: "claude run", Restart: "always"},
+			name:    "success with restart always",
+			args:    []string{"claude run"},
+			restart: "always",
 			wantCalls: []string{
 				"ServiceInstall:test-svc:claude run:agent1:true",
 				"ServiceStart:test-svc",
 			},
 		},
 		{
-			name:   "success without restart",
-			svcCfg: config.ServiceConfig{Command: "claude run", Restart: "never"},
+			name:    "success without restart",
+			args:    []string{"claude run"},
+			restart: "never",
 			wantCalls: []string{
 				"ServiceInstall:test-svc:claude run:agent1:false",
 				"ServiceStart:test-svc",
@@ -81,13 +84,13 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name:       "install fails",
-			svcCfg:     config.ServiceConfig{Command: "claude run"},
+			args:       []string{"claude run"},
 			installErr: fmt.Errorf("disk full"),
 			wantErr:    true,
 		},
 		{
 			name:     "start fails",
-			svcCfg:   config.ServiceConfig{Command: "claude run"},
+			args:     []string{"claude run"},
 			startErr: fmt.Errorf("already running"),
 			wantErr:  true,
 		},
@@ -100,7 +103,7 @@ func TestInstall(t *testing.T) {
 				startErr:   tt.startErr,
 			}
 
-			err := service.Install("test-svc", tt.svcCfg, "agent1", plat)
+			err := service.Install("test-svc", tt.args, tt.restart, "agent1", plat)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Install() error = %v, wantErr %v", err, tt.wantErr)
 			}

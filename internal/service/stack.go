@@ -34,17 +34,19 @@ func resolveStartOptions(opts []StartOption) startOptions {
 	return o
 }
 
-// resolveServiceCommand returns the command for a service entry. For agent
+// resolveServiceCommand returns the command args for a service entry. For agent
 // services (name starts with "agent-") where a matching AgentConfig exists in
 // the full config, it builds a container run command instead.
-func resolveServiceCommand(e Entry, o startOptions) (string, error) {
+// Simple commands return a single-element slice; container commands return
+// the full args slice.
+func resolveServiceCommand(e Entry, o startOptions) ([]string, error) {
 	if o.cfg == nil || !strings.HasPrefix(e.Name, "agent-") {
-		return e.Command, nil
+		return []string{e.Command}, nil
 	}
 	agentName := strings.TrimPrefix(e.Name, "agent-")
 	agentCfg, ok := o.cfg.Agents[agentName]
 	if !ok {
-		return e.Command, nil
+		return []string{e.Command}, nil
 	}
 	ctrCfg, ok := o.cfg.Containers[agentCfg.Container]
 	if !ok {
@@ -147,12 +149,11 @@ func StartAll(svcCfg config.ServicesConfig, plat platform.Platform, opts ...Star
 	username := currentUsername()
 	entries := Flatten(svcCfg)
 	for _, e := range entries {
-		command, err := resolveServiceCommand(e, o)
+		args, err := resolveServiceCommand(e, o)
 		if err != nil {
 			return fmt.Errorf("resolve %s: %w", e.Name, err)
 		}
-		sc := config.ServiceConfig{Command: command, Restart: e.Restart}
-		if err := Install(e.Name, sc, username, plat); err != nil {
+		if err := Install(e.Name, args, e.Restart, username, plat); err != nil {
 			return fmt.Errorf("start %s: %w", e.Name, err)
 		}
 		fmt.Printf("started %s\n", e.Name)
@@ -240,13 +241,12 @@ func StartOne(name string, svcCfg config.ServicesConfig, plat platform.Platform,
 		return err
 	}
 	o := resolveStartOptions(opts)
-	command, err := resolveServiceCommand(entry, o)
+	args, err := resolveServiceCommand(entry, o)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", entry.Name, err)
 	}
 	username := currentUsername()
-	sc := config.ServiceConfig{Command: command, Restart: entry.Restart}
-	return Install(entry.Name, sc, username, plat)
+	return Install(entry.Name, args, entry.Restart, username, plat)
 }
 
 // StopOne stops a single named service.

@@ -101,8 +101,8 @@ type darwinServiceOps struct {
 	homeBase string
 }
 
-func (d *darwinServiceOps) ServiceInstall(name, command, username string, restart bool) error {
-	plist := generateLaunchdPlist(name, command, username, restart)
+func (d *darwinServiceOps) ServiceInstall(name string, args []string, username string, restart bool) error {
+	plist := generateLaunchdPlist(name, args, username, restart)
 	userHome := filepath.Join(d.homeBase, username)
 	path := filepath.Join(userHome, "Library", "LaunchAgents", fmt.Sprintf("com.myhome.%s.plist", name))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -163,13 +163,29 @@ func launchdPlistPath(name string) string {
 	return filepath.Join(home, "Library", "LaunchAgents", fmt.Sprintf("com.myhome.%s.plist", name))
 }
 
-func generateLaunchdPlist(name, command, username string, restart bool) string {
+func generateLaunchdPlist(name string, args []string, username string, restart bool) string {
 	keepAlive := "false"
 	if restart {
 		keepAlive = "true"
 	}
 	homeDir, _ := os.UserHomeDir()
 	binPath := fmt.Sprintf("%s/.local/bin:%s/go/bin:/usr/local/bin:/usr/bin:/bin", homeDir, homeDir)
+
+	var programArgs string
+	if len(args) == 1 {
+		// Simple command: use shell wrapper
+		programArgs = fmt.Sprintf(`        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>%s</string>`, xmlEscape(args[0]))
+	} else {
+		// Multi-arg command: each arg as its own <string> element
+		var lines []string
+		for _, a := range args {
+			lines = append(lines, fmt.Sprintf("        <string>%s</string>", xmlEscape(a)))
+		}
+		programArgs = strings.Join(lines, "\n")
+	}
+
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -183,9 +199,7 @@ func generateLaunchdPlist(name, command, username string, restart bool) string {
     </dict>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>%s</string>
+%s
     </array>
     <key>UserName</key>
     <string>%s</string>
@@ -198,5 +212,14 @@ func generateLaunchdPlist(name, command, username string, restart bool) string {
     <key>StandardErrorPath</key>
     <string>/tmp/com.myhome.%s.err.log</string>
 </dict>
-</plist>`, name, binPath, command, username, keepAlive, name, name)
+</plist>`, name, binPath, programArgs, username, keepAlive, name, name)
+}
+
+// xmlEscape escapes special XML characters in a string.
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	return s
 }

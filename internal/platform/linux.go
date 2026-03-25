@@ -94,8 +94,8 @@ type linuxServiceOps struct {
 	cmdRunner
 }
 
-func (l *linuxServiceOps) ServiceInstall(name, command, username string, restart bool) error {
-	unit := generateSystemdUnit(name, command, username, restart)
+func (l *linuxServiceOps) ServiceInstall(name string, args []string, username string, restart bool) error {
+	unit := generateSystemdUnit(name, args, username, restart)
 	path := filepath.Join("/etc/systemd/system", fmt.Sprintf("myhome-%s.service", name))
 	if err := os.WriteFile(path, []byte(unit), 0o644); err != nil {
 		return fmt.Errorf("write unit %s: %w", path, err)
@@ -152,13 +152,27 @@ func (l *Linux) UserHome(username string) string {
 	return filepath.Join("/home", username)
 }
 
-func generateSystemdUnit(name, command, username string, restart bool) string {
+func generateSystemdUnit(name string, args []string, username string, restart bool) string {
 	restartPolicy := "no"
 	if restart {
 		restartPolicy = "always"
 	}
 	homeDir, _ := os.UserHomeDir()
 	binPath := fmt.Sprintf("%s/.local/bin:%s/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin", homeDir, homeDir)
+
+	var execStart string
+	if len(args) == 1 {
+		// Simple command (deskd, adapters): use shell wrapper
+		execStart = fmt.Sprintf("/bin/sh -c '%s'", args[0])
+	} else {
+		// Multi-arg command (container run): write args directly
+		var quoted []string
+		for _, a := range args {
+			quoted = append(quoted, systemdQuoteArg(a))
+		}
+		execStart = strings.Join(quoted, " ")
+	}
+
 	return fmt.Sprintf(`[Unit]
 Description=myhome %s service
 After=network.target
@@ -168,10 +182,23 @@ Type=simple
 User=%s
 Environment=PATH=%s
 Environment=HOME=%s
-ExecStart=/bin/sh -c '%s'
+ExecStart=%s
 Restart=%s
 
 [Install]
 WantedBy=multi-user.target
-`, name, username, binPath, homeDir, command, restartPolicy)
+`, name, username, binPath, homeDir, execStart, restartPolicy)
+}
+
+// systemdQuoteArg escapes an argument for systemd ExecStart.
+// See https://www.freedesktop.org/software/systemd/man/systemd.service.html
+func systemdQuoteArg(arg string) string {
+	if !strings.ContainsAny(arg, " \t\"\\$") {
+		return arg
+	}
+	// Escape special chars: \ -> \\, " -> \", $ -> $$
+	r := strings.ReplaceAll(arg, `\`, `\\`)
+	r = strings.ReplaceAll(r, `"`, `\"`)
+	r = strings.ReplaceAll(r, `$`, `$$`)
+	return `"` + r + `"`
 }

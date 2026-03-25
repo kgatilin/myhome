@@ -39,7 +39,10 @@ type Platform interface {
 	ListInstalledPackages() ([]string, error)
 
 	// ServiceInstall installs a service (launchd plist or systemd unit).
-	ServiceInstall(name, command, username string, restart bool) error
+	// args is a slice of command arguments. For simple commands (deskd, adapters),
+	// pass a single-element slice; the platform will use /bin/sh -c.
+	// For multi-arg commands (container run), each arg is passed directly.
+	ServiceInstall(name string, args []string, username string, restart bool) error
 
 	// ServiceStart starts a service.
 	ServiceStart(name string) error

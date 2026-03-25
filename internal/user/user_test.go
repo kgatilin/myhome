@@ -64,7 +64,7 @@ func (m *mockPlatform) InstallCaskPackages(packages []string) error {
 	return nil
 }
 
-func (m *mockPlatform) ServiceInstall(name, command, username string, restart bool) error {
+func (m *mockPlatform) ServiceInstall(name string, args []string, username string, restart bool) error {
 	m.record(fmt.Sprintf("ServiceInstall:%s:%s", name, username))
 	return nil
 }

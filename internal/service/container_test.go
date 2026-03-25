@@ -17,8 +17,8 @@ func TestResolveServiceCommand_noConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "deskd agent run dev" {
-		t.Errorf("expected original command, got %q", got)
+	if len(got) != 1 || got[0] != "deskd agent run dev" {
+		t.Errorf("expected single-element slice with original command, got %v", got)
 	}
 }
 
@@ -30,8 +30,8 @@ func TestResolveServiceCommand_nonAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "deskd serve" {
-		t.Errorf("expected original command, got %q", got)
+	if len(got) != 1 || got[0] != "deskd serve" {
+		t.Errorf("expected single-element slice with original command, got %v", got)
 	}
 }
 
@@ -43,8 +43,8 @@ func TestResolveServiceCommand_agentNotInConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "deskd agent run dev" {
-		t.Errorf("expected original command, got %q", got)
+	if len(got) != 1 || got[0] != "deskd agent run dev" {
+		t.Errorf("expected single-element slice with original command, got %v", got)
 	}
 }
 

@@ -25,7 +25,7 @@ func (m *mockPlatform) PackageManager() string                                  
 func (m *mockPlatform) InstallPackages(packages []string) error                  { return nil }
 func (m *mockPlatform) InstallCaskPackages(packages []string) error              { return nil }
 func (m *mockPlatform) ListInstalledPackages() ([]string, error)                 { return m.installed, nil }
-func (m *mockPlatform) ServiceInstall(name, command, username string, restart bool) error { return nil }
+func (m *mockPlatform) ServiceInstall(name string, args []string, username string, restart bool) error { return nil }
 func (m *mockPlatform) ServiceStart(name string) error                           { return nil }
 func (m *mockPlatform) ServiceStop(name string) error                            { return nil }
 func (m *mockPlatform) ServiceStatus(name string) (bool, error)                  { return false, nil }

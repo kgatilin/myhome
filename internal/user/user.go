@@ -112,7 +112,7 @@ func Create(name string, userCfg config.User, cfg *config.Config, plat platform.
 	if userCfg.Template != "" {
 		if tmpl, ok := cfg.AgentTemplates[userCfg.Template]; ok && tmpl.Service.Command != "" {
 			svcName := "myhome-" + name
-			if err := service.Install(svcName, tmpl.Service, name, plat); err != nil {
+			if err := service.Install(svcName, []string{tmpl.Service.Command}, tmpl.Service.Restart, name, plat); err != nil {
 				return fmt.Errorf("install service for %s: %w", name, err)
 			}
 			fmt.Printf("Service %s installed and started\n", svcName)
