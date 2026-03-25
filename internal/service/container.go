@@ -92,7 +92,7 @@ func BuildAgentContainerCommand(name string, agentCfg config.AgentConfig, ctrCfg
 	// Map host path to container home equivalent
 	deskdHostFile := filepath.Join(homeDir, ".deskd", "agents", name+".yaml")
 	deskdContainerFile := filepath.Join(containerHome, ".deskd", "agents", name+".yaml")
-	args = append(args, "-v", deskdHostFile+":"+deskdContainerFile+":ro")
+	args = append(args, "-v", deskdHostFile+":"+deskdContainerFile)
 
 	// Mount Claude config + auth
 	claudeConfigDir := "~/.claude"
