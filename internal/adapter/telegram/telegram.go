@@ -185,10 +185,11 @@ func (b *Bot) handleUpdate(u Update) {
 
 	// Post to bus.
 	busMsg := BusMessage{
-		Type:   "message",
-		ID:     fmt.Sprintf("telegram-%d-%d-%d", msg.Chat.ID, msg.MessageID, time.Now().UnixMilli()),
-		Source: fmt.Sprintf("telegram:%d", msg.Chat.ID),
-		Target: target,
+		Type:    "message",
+		ID:      fmt.Sprintf("telegram-%d-%d-%d", msg.Chat.ID, msg.MessageID, time.Now().UnixMilli()),
+		Source:  fmt.Sprintf("telegram:%d", msg.Chat.ID),
+		Target:  target,
+		ReplyTo: fmt.Sprintf("reply:telegram:%d", msg.Chat.ID),
 		Payload: map[string]any{
 			"task":     msg.Text,
 			"chat_id":  msg.Chat.ID,

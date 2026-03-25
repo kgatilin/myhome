@@ -14,6 +14,7 @@ type BusMessage struct {
 	Name          string         `json:"name,omitempty"`
 	Source        string         `json:"source,omitempty"`
 	Target        string         `json:"target,omitempty"`
+	ReplyTo       string         `json:"reply_to,omitempty"`
 	Payload       any            `json:"payload,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
 	Subscriptions []string       `json:"subscriptions,omitempty"`
