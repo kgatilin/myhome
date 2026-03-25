@@ -222,6 +222,9 @@ func (b *Bot) resolveTarget(msg *Message) (string, bool) {
 			if route.OwnerOnly && msg.From.ID != b.cfg.OwnerID {
 				return "", false
 			}
+			if route.MentionOnly && b.cfg.BotUsername != "" && !strings.Contains(msg.Text, "@"+b.cfg.BotUsername) {
+				return "", false
+			}
 			target := route.Target
 			if target == "" {
 				target = b.cfg.DefaultTarget

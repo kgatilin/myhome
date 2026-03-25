@@ -20,6 +20,7 @@ type GitHubAdapterConfig struct {
 // TelegramAdapterConfig configures the Telegram bot adapter.
 type TelegramAdapterConfig struct {
 	Token         string          `yaml:"token"`          // vault:// prefix supported
+	BotUsername   string          `yaml:"bot_username"`   // e.g. "kiraautonomaos_bot"
 	BusSocket     string          `yaml:"bus_socket"`
 	Routes        []TelegramRoute `yaml:"routes"`
 	OwnerID       int64           `yaml:"owner_id"`
@@ -28,7 +29,8 @@ type TelegramAdapterConfig struct {
 
 // TelegramRoute maps a Telegram chat to a bus target.
 type TelegramRoute struct {
-	ChatID    int64  `yaml:"chat_id"`
-	Target    string `yaml:"target"`
-	OwnerOnly bool   `yaml:"owner_only"`
+	ChatID      int64  `yaml:"chat_id"`
+	Target      string `yaml:"target"`
+	OwnerOnly   bool   `yaml:"owner_only"`
+	MentionOnly bool   `yaml:"mention_only"` // only route when bot is @mentioned
 }
