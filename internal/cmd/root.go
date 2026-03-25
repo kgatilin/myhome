@@ -31,4 +31,5 @@ func init() {
 	rootCmd.AddCommand(workspaceCmd)
 	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(daemonCmd)
+	rootCmd.AddCommand(adapterCmd)
 }

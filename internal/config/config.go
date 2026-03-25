@@ -20,6 +20,7 @@ type Config struct {
 	Auth     map[string]AuthHost          `yaml:"auth"`
 	Claude   ClaudeConfig                 `yaml:"claude"`
 	Tasks    TasksConfig                  `yaml:"tasks"`
+	Adapters AdaptersConfig               `yaml:"adapters"`
 	InfraConfig `yaml:",inline"`
 }
 
