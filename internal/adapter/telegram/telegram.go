@@ -250,13 +250,14 @@ func (b *Bot) handleHelp(msg *Message) {
 	}
 }
 
-// sendMessage sends a text message to a Telegram chat.
+// sendMessage sends a text message to a Telegram chat with HTML formatting.
 func (b *Bot) sendMessage(chatID int64, text string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", b.cfg.Token)
 
 	payload := map[string]any{
-		"chat_id": chatID,
-		"text":    text,
+		"chat_id":    chatID,
+		"text":       markdownToTelegramHTML(text),
+		"parse_mode": "HTML",
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -308,6 +309,82 @@ func parseChatIDFromTarget(target string) (int64, error) {
 	var chatID int64
 	_, err := fmt.Sscanf(strings.TrimPrefix(target, "telegram:"), "%d", &chatID)
 	return chatID, err
+}
+
+// markdownToTelegramHTML converts common markdown to Telegram-compatible HTML.
+// Handles: **bold**, *italic*, `code`, ```code blocks```, and escapes HTML entities.
+func markdownToTelegramHTML(text string) string {
+	// Escape HTML entities first
+	text = strings.ReplaceAll(text, "&", "&amp;")
+	text = strings.ReplaceAll(text, "<", "&lt;")
+	text = strings.ReplaceAll(text, ">", "&gt;")
+
+	// Code blocks: ```...``` → <pre>...</pre>
+	for {
+		start := strings.Index(text, "```")
+		if start == -1 {
+			break
+		}
+		// Skip optional language tag on same line
+		contentStart := start + 3
+		if nl := strings.Index(text[contentStart:], "\n"); nl != -1 && nl < 20 {
+			contentStart += nl + 1
+		}
+		end := strings.Index(text[contentStart:], "```")
+		if end == -1 {
+			break
+		}
+		end += contentStart
+		code := text[contentStart:end]
+		text = text[:start] + "<pre>" + code + "</pre>" + text[end+3:]
+	}
+
+	// Inline code: `...` → <code>...</code>
+	for {
+		start := strings.Index(text, "`")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(text[start+1:], "`")
+		if end == -1 {
+			break
+		}
+		end += start + 1
+		code := text[start+1 : end]
+		text = text[:start] + "<code>" + code + "</code>" + text[end+1:]
+	}
+
+	// Bold: **...** → <b>...</b>
+	for {
+		start := strings.Index(text, "**")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(text[start+2:], "**")
+		if end == -1 {
+			break
+		}
+		end += start + 2
+		bold := text[start+2 : end]
+		text = text[:start] + "<b>" + bold + "</b>" + text[end+2:]
+	}
+
+	// Italic: *...* → <i>...</i> (but not inside words)
+	for {
+		start := strings.Index(text, "*")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(text[start+1:], "*")
+		if end == -1 {
+			break
+		}
+		end += start + 1
+		italic := text[start+1 : end]
+		text = text[:start] + "<i>" + italic + "</i>" + text[end+1:]
+	}
+
+	return text
 }
 
 // extractReplyText gets text from a reply payload.
