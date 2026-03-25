@@ -46,7 +46,7 @@ func (c *BusClient) Connect() error {
 	reg := BusMessage{
 		Type:          "register",
 		Name:          "telegram-adapter",
-		Subscriptions: []string{"reply:telegram:*"},
+		Subscriptions: []string{"telegram:*"},
 	}
 	if err := c.send(reg); err != nil {
 		return err
