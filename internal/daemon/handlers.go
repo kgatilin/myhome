@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/kgatilin/myhome/internal/agent"
 	"github.com/kgatilin/myhome/internal/config"
 )
 
@@ -12,8 +13,9 @@ type nameParam struct {
 }
 
 type sendParam struct {
-	Name    string `json:"name"`
-	Message string `json:"message"`
+	Name     string `json:"name"`
+	Message  string `json:"message"`
+	MaxTurns int    `json:"max_turns,omitempty"`
 }
 
 // handler processes daemon RPC requests using the manager and store.
@@ -57,7 +59,11 @@ func (h *handler) handleSend(params json.RawMessage) Response {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return Response{Error: fmt.Sprintf("invalid params: %v", err)}
 	}
-	response, err := h.manager.Send(p.Name, p.Message)
+	var opts *agent.SendOptions
+	if p.MaxTurns > 0 {
+		opts = &agent.SendOptions{MaxTurns: p.MaxTurns}
+	}
+	response, err := h.manager.Send(p.Name, p.Message, opts)
 	if err != nil {
 		return Response{Error: err.Error()}
 	}

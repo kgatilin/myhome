@@ -216,8 +216,13 @@ func (m *Manager) Remove(name string) error {
 	return m.store.Remove(name)
 }
 
+// SendOptions holds optional parameters for Send.
+type SendOptions struct {
+	MaxTurns int // passed through to Claude CLI --max-turns
+}
+
 // Send sends a message to a running agent and returns the response.
-func (m *Manager) Send(name, message string) (string, error) {
+func (m *Manager) Send(name, message string, opts *SendOptions) (string, error) {
 	state, err := m.store.Load(name)
 	if err != nil {
 		return "", err
@@ -234,6 +239,9 @@ func (m *Manager) Send(name, message string) (string, error) {
 		"claude", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose")
 	if state.Model != "" {
 		claudeArgs = append(claudeArgs, "--model", state.Model)
+	}
+	if opts != nil && opts.MaxTurns > 0 {
+		claudeArgs = append(claudeArgs, "--max-turns", fmt.Sprintf("%d", opts.MaxTurns))
 	}
 	if state.SessionID != "" {
 		claudeArgs = append(claudeArgs, "--resume", state.SessionID)
@@ -269,6 +277,9 @@ func (m *Manager) Send(name, message string) (string, error) {
 		if msgType == "result" {
 			if r, ok := msg["result"].(string); ok {
 				resultText = r
+			}
+			if cost, ok := msg["total_cost_usd"].(float64); ok {
+				state.TotalCostUSD += cost
 			}
 		}
 	}

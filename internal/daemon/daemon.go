@@ -25,7 +25,7 @@ type agentManager interface {
 	Stop(name string) error
 	Restart(name string, agentCfg config.AgentConfig, cfg *config.Config) error
 	Remove(name string) error
-	Send(name, message string) (string, error)
+	Send(name, message string, opts *agent.SendOptions) (string, error)
 	RefreshStatus(name string) (*agent.State, error)
 }
 
