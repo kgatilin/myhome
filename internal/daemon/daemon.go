@@ -21,9 +21,9 @@ import (
 
 // agentManager abstracts agent lifecycle operations.
 type agentManager interface {
-	Create(name string, agentCfg config.AgentConfig, cfg *config.Config) error
+	Create(name string, agentCfg config.AgentConfig, cfg *config.Config, opts ...agent.CreateOpts) error
 	Stop(name string) error
-	Restart(name string, agentCfg config.AgentConfig, cfg *config.Config) error
+	Restart(name string, agentCfg config.AgentConfig, cfg *config.Config, opts ...agent.CreateOpts) error
 	Remove(name string) error
 	Send(name, message string) (string, error)
 	RefreshStatus(name string) (*agent.State, error)
